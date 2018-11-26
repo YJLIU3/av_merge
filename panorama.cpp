@@ -14,7 +14,7 @@ static Mat rear_now;
 static Mat matrix_bypast[25];
 int bypast_cont = 0;
 
-#define grid_size 40
+#define grid_size 20
 #define min_match 5
 #define pi 3.1415926
 static Mat imMaskS;
@@ -31,8 +31,9 @@ static Mat output(Size_BG, CV_8UC4);
 static Mat Highlander;
 
 
-static Mat front(Size(255,120),  CV_8UC4, Scalar::all(0));
-static Mat rear(Size(255,120), CV_8UC4, Scalar::all(0));
+static Mat front(image_size,  CV_8UC4, Scalar::all(0));
+static Mat rear(image_size, CV_8UC4, Scalar::all(0));
+
 
 static Mat im1;
 static Mat im2;
@@ -163,8 +164,8 @@ Mat compute_alpha(Mat mask1, Mat mask2, Mat time1, Mat time2, float timeRatioThr
 void mix_image_front(Mat image1, Mat image2, Mat alpha, Mat alpha_1, Mat& output)
 {
 #if 1	
-	Mat Image1_ROI = image1(Rect((image1.cols - front.cols)/2, front.rows, front.cols, image1.rows - front.rows));
-	Mat Image2_ROI = image2(Rect((image1.cols - front.cols)/2, front.rows, front.cols, image1.rows - front.rows));
+	Mat Image1_ROI = image1(Rect(0, front.rows, image1.cols, Size_BG.height - front.size().height));
+	Mat Image2_ROI = image2(Rect(0, front.rows, image1.cols, Size_BG.height - front.size().height));
 	Image1_ROI.copyTo(Image2_ROI);
 	//imwrite("Image1_ROI.png", Image1_ROI);
 	output = image2;
@@ -174,9 +175,10 @@ void mix_image_front(Mat image1, Mat image2, Mat alpha, Mat alpha_1, Mat& output
 void mix_image_rear(Mat image1, Mat image2, Mat alpha, Mat alpha_1, Mat& output)
 {
 #if 1	
-	Mat Image1_ROI = image1(Rect((image1.cols - front.cols)/2, 0, front.cols, image1.rows - front.rows));
-	Mat Image2_ROI = image2(Rect((image1.cols - front.cols)/2, 0, front.cols, image1.rows - front.rows));
+	Mat Image1_ROI = image1(Rect(0, 0, Size_BG.width, Size_BG.height - front.size().height));
+	Mat Image2_ROI = image2(Rect(0, 0, Size_BG.width, Size_BG.height - front.size().height));
 	Image1_ROI.copyTo(Image2_ROI);
+//    cout << Size_BG.height - front.size().height << endl;
 	//imwrite("Image1_ROI.png", Image1_ROI);
 	output = image2;
 #endif
@@ -212,10 +214,6 @@ Mat Panorama::front_process(Mat front, Mat rear)
 		preImg = im1;
 
 		front_before = front;
-
-        Highlander = imread("car.jpg", 1);
-//        cvtColor(Highlander, Highlander, COLOR_BGR2BGRA);
-        
 		output = im1;
 	}
 	else
@@ -301,9 +299,9 @@ Mat Panorama::front_process(Mat front, Mat rear)
         if(DEBUG_MSG)
         cout<< "Process_matrix Running time  is: " << static_cast<double>(warp_st4 - warp_st3) / CLOCKS_PER_SEC * 1000 << "ms" << endl;   
 
-        if(DEBUG_MSG)
+        if(DEBUG_MSG){
         cout << "+++++++++++++Current speed is++++++++++"<< abs( matrix.at<double>(1, 2)*0.25)*3.6 << "Km/h"<<endl;
-
+        }
         clock_t warp_st = clock();
         warpAffine(im1, im1t, matrix, WEIGHT_BIGSIZE, INTER_NEAREST);   
         clock_t warp_en = clock();
@@ -361,6 +359,7 @@ Mat Panorama::front_process(Mat front, Mat rear)
 	return output;
 }
 
+static int d = 5;
 Mat Panorama::rear_process(Mat front, Mat rear)
 {
     if (bypast_cont > 23)
@@ -383,8 +382,6 @@ Mat Panorama::rear_process(Mat front, Mat rear)
 
         rear_before = rear;
 
-        Highlander = imread("car.jpg", 1);
-        
 		output = im1;
 	}
 	else
@@ -451,7 +448,7 @@ Mat Panorama::rear_process(Mat front, Mat rear)
         
         matrix_back = matrix;
          
-        if (1)
+        if (0)
 		{
 			matrix_zero.at<double>(0, 2) = matrix.at<double>(0, 2);
 			matrix_zero.at<double>(1, 2) = matrix.at<double>(1, 2);
@@ -470,6 +467,13 @@ Mat Panorama::rear_process(Mat front, Mat rear)
         clock_t warp_st = clock();
         warpAffine(im1, im1t, matrix, WEIGHT_BIGSIZE, INTER_NEAREST);   
         clock_t warp_en = clock();
+        if(d)
+        {
+            imwrite("debug/im1.png", im1);
+            imwrite("debug/im1_t.png", im1t);
+            cout << matrix << endl;
+            d--;
+        }
         if(DEBUG_MSG)
         cout<< "warpAffine Running time  is: " << static_cast<double>(warp_en - warp_st) / CLOCKS_PER_SEC * 1000 << "ms" << endl;   
 
