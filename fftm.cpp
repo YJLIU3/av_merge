@@ -129,7 +129,6 @@ Mat LogPolarFFTTemplateMatch(Mat im0, Mat im1, double canny_threshold1, double c
 {
     //im0 ==== before
     //im1 ==== now
-
     Canny(im1, im1, canny_threshold2, canny_threshold1, 3, 1);
     if(im0.type()!=CV_32FC1)
     im0.convertTo(im0, CV_32FC1, 1.0 / 255.0);
@@ -137,8 +136,8 @@ Mat LogPolarFFTTemplateMatch(Mat im0, Mat im1, double canny_threshold1, double c
     im1.convertTo(im1, CV_32FC1, 1.0 / 255.0);
 
     Mat im1_t = Mat::zeros(im1.size(),im1.type());
-    Mat im1_Rec = Mat(im1, Rect( 0, 0, im1.cols*0.9, im1.rows*0.7));
-    Mat im1_t_Rec = Mat(im1_t, Rect( 0, 0, im1_t.cols*0.9, im1_t.rows*0.7));
+    Mat im1_Rec = Mat(im1, Rect( im1.cols*0.1, 0, im1.cols*0.9, im1.rows*0.7));
+    Mat im1_t_Rec = Mat(im1_t, Rect( im1_t.cols*0.1, 0, im1_t.cols*0.9, im1_t.rows*0.7));
     im1_Rec.copyTo(im1_t_Rec);
 
     clock_t a = clock();
@@ -147,7 +146,6 @@ Mat LogPolarFFTTemplateMatch(Mat im0, Mat im1, double canny_threshold1, double c
     if(DEBUG_MSG)
         cout<< "PhaseCorrelate time  is: " << static_cast<double>(b - a) / CLOCKS_PER_SEC * 1000 << "ms" << endl;   
     
-
 	Mat mov_mat = Mat::zeros(Size(3, 2), CV_64FC1);
 
 	mov_mat.at<double>(0, 0) = 1.0;
@@ -158,7 +156,6 @@ Mat LogPolarFFTTemplateMatch(Mat im0, Mat im1, double canny_threshold1, double c
 	mov_mat.at<double>(0, 2) = -tr.x;
 	mov_mat.at<double>(1, 2) = -tr.y;
 
-    if(DEBUG_MSG)
-        cout << mov_mat << endl;
 	return mov_mat;
+
 }
