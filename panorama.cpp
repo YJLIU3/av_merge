@@ -5,7 +5,7 @@
 #include <opencv2/xfeatures2d.hpp>
 #include<time.h> 
 #include "fftm.hpp"
-
+#include "cv_vx.h"
 
 static Mat front_before;
 static Mat front_now;
@@ -554,5 +554,5 @@ void Panorama::preProcess(Mat front_mask, Mat rear_mask)
 
 	weight.convertTo(weight, CV_32FC1);
 	weight /= 255.0;
-
+    
 }
