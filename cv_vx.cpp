@@ -1,5 +1,7 @@
 #include "cv_vx.h"
 #include "parameter.h"
+#include <unistd.h>
+
 using namespace cv;
 using namespace std;
 Mat err_Mat;
@@ -25,34 +27,33 @@ static Mat vx_output;
 static vx_node node[7];
 
 static vx_imagepatch_addressing_t imgInfo = VX_IMAGEPATCH_ADDR_INIT;
-static vx_uint8* imgData = (vx_uint8*)malloc(width*height*3*sizeof(vx_uint8));
+static vx_uint8* imgData = (vx_uint8*)malloc(width*height*4*sizeof(vx_uint8));
 static vx_rectangle_t rect = {0,0,width,height};
 static vx_map_id map_id = 0;
-static uchar * out_buff = (uchar *)malloc(sizeof(uchar) * width*height*3);
+static uchar * out_buff = (uchar *)malloc(sizeof(uchar) * width*height*4);
+static vx_image alpha;
 
-
-void init_vx(vx_context& context, vx_graph& graph)
+void init_vx(vx_context& Pcontext, vx_graph& Pgraph)
 {
     _init_vx = false;
 
     vx_output = Mat::zeros(Size(width, height),CV_8UC4);
+
     context = vxCreateContext();
     graph = vxCreateGraph(context);
     image_input = vxCreateImage(context,width,height,VX_DF_IMAGE_RGBX);
     OUT = vxCreateImage(context,width,height,VX_DF_IMAGE_RGBX);
-
     for(int i = 0; i < 3; i++)
     {
         image_RGB[i] = vxCreateImage(context, width, height, VX_DF_IMAGE_U8);
         image_WRGB[i] = vxCreateImage(context, width, height, VX_DF_IMAGE_U8);
     }
 
-
+    alpha = vxCreateImage(context, width, height, VX_DF_IMAGE_U8);
     interpolation[0] = VX_INTERPOLATION_NEAREST_NEIGHBOR;
     interpolation[1] = VX_INTERPOLATION_BILINEAR;
 
     wrap_affine_matrix = vxCreateMatrix(context, VX_TYPE_FLOAT32, 2, 3);
-
 
     node[0] = vxChannelExtractNode(graph, image_input, VX_CHANNEL_R, image_RGB[0]);
     node[1] = vxChannelExtractNode(graph, image_input, VX_CHANNEL_G, image_RGB[1]);
@@ -60,23 +61,27 @@ void init_vx(vx_context& context, vx_graph& graph)
     node[3] = vxWarpAffineNode(graph, image_RGB[0], wrap_affine_matrix, interpolation[0], image_WRGB[0]);
     node[4] = vxWarpAffineNode(graph, image_RGB[1], wrap_affine_matrix, interpolation[0], image_WRGB[1]);
     node[5] = vxWarpAffineNode(graph, image_RGB[2], wrap_affine_matrix, interpolation[0], image_WRGB[2]);
-    node[6] = vxChannelCombineNode(graph, image_WRGB[0], image_WRGB[1], image_WRGB[2], NULL, OUT);
-    
+    node[6] = vxChannelCombineNode(graph, image_WRGB[0], image_WRGB[1], image_WRGB[2], alpha, OUT);
+
     vxMapImagePatch(image_input,&rect,0,&map_id,&imgInfo,(void**)&imgData,VX_WRITE_ONLY,VX_MEMORY_TYPE_HOST,0);
     vxMapImagePatch(OUT,&rect,0,&map_id,&imgInfo,(void**)&out_buff,VX_READ_ONLY,VX_MEMORY_TYPE_HOST,0);
+
 
 }
 
 
-Mat vx_Affine_RGB(Mat input, Mat matrix){
+Mat vx_Affine_RGB(Mat * Pinput, Mat * Pmatrix){
 
     // create graph
+
+    Mat input, matrix;
+    input = *Pinput;
+    matrix = *Pmatrix;
     if(_init_vx)
     init_vx(context, graph);
-    
     vx_uint32 SIZE = width*height*4;
-    clock_t a = clock(); 
-
+    clock_t a = clock();
+    
     memcpy(imgData,(uchar *)input.data,sizeof(uchar)*SIZE);
 
     double _rotate[2][2] = {
@@ -91,17 +96,17 @@ Mat vx_Affine_RGB(Mat input, Mat matrix){
         {(float)(-matrix.at<double>(0, 2)), (float)(-matrix.at<double>(1, 2))},
     };
 
-     
     FUNCHECK(vxCopyMatrix(wrap_affine_matrix , mat, VX_WRITE_ONLY, VX_MEMORY_TYPE_HOST));
 
-
-
     FUNCHECK(vxProcessGraph(graph));
+
     clock_t b = clock(); 
     if(DEBUG_MSG)
     cout<< "Process_Graph Running time  is: " << static_cast<double>(b - a) / CLOCKS_PER_SEC * 1000 << "ms" << endl;
 
+
     vx_output.data = (uchar *)out_buff;
+
 
     return vx_output;
 
