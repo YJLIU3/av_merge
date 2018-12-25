@@ -34,7 +34,6 @@ static Mat Highlander;
 static Mat front(image_size,  CV_8UC4, Scalar::all(0));
 static Mat rear(image_size, CV_8UC4, Scalar::all(0));
 
-
 static Mat im1;
 static Mat im2;
 
@@ -230,8 +229,6 @@ Mat Panorama::front_process(Mat front, Mat rear)
         }
 
 
-//        flip(rear, rear, -1);
-		
 		mergeFrontMat(front, im2);
 
         cvtColor(front, front, CV_RGB2GRAY);
@@ -244,7 +241,12 @@ Mat Panorama::front_process(Mat front, Mat rear)
         cout<< "Before matrix Running time  is: " << static_cast<double>(b - a) / CLOCKS_PER_SEC * 1000 << "ms" << endl;   
 
         clock_t warp_st1 = clock();
- 		Mat matrix = LogPolarFFTTemplateMatch(front_before, front_now, 200, 100, idx);
+        Mat matrix;
+
+        if(!VIP7K)
+            matrix = vx_LogPolarFFTTemplateMatch(front_before, front_now, 200, 100, idx);
+        else
+ 		    matrix = LogPolarFFTTemplateMatch(front_before, front_now, 200, 100, idx);
         clock_t warp_st2 = clock();
         if(DEBUG_MSG)
         cout<< "Compute_matrix Running time  is: " << static_cast<double>(warp_st2 - warp_st1) / CLOCKS_PER_SEC * 1000 << "ms" << endl;   
@@ -303,7 +305,13 @@ Mat Panorama::front_process(Mat front, Mat rear)
         cout << "+++++++++++++Current speed is++++++++++"<< abs( matrix.at<double>(1, 2)*0.25)*3.6 << "Km/h"<<endl;
         }
         clock_t warp_st = clock();
-        warpAffine(im1, im1t, matrix, WEIGHT_BIGSIZE, INTER_NEAREST);   
+        
+        if(VIP7K)
+            im1t = vx_Affine_RGB(&im1, &matrix);
+        else
+            warpAffine(im1, im1t, matrix, WEIGHT_BIGSIZE, INTER_NEAREST);
+
+
         clock_t warp_en = clock();
         if(DEBUG_MSG)
         cout<< "warpAffine Running time  is: " << static_cast<double>(warp_en - warp_st) / CLOCKS_PER_SEC * 1000 << "ms" << endl;   
@@ -339,7 +347,7 @@ Mat Panorama::front_process(Mat front, Mat rear)
 		imTime1 = imTime;
 
         output = ims.clone();
-        if(DEBUG_MSG)
+        if(DEBUG_MSG_IMG)
             imwrite("debug/output.png",output);
 #if 0
 
@@ -359,7 +367,6 @@ Mat Panorama::front_process(Mat front, Mat rear)
 	return output;
 }
 
-static int d = 5;
 Mat Panorama::rear_process(Mat front, Mat rear)
 {
     if (bypast_cont > 23)
@@ -403,14 +410,22 @@ Mat Panorama::rear_process(Mat front, Mat rear)
         rear_now = rear;
         clock_t b = clock();
         if(DEBUG_MSG)
-        cout<< "Before matrix Running time  is: " << static_cast<double>(b - a) / CLOCKS_PER_SEC * 1000 << "ms" << endl;   
+        cout<< "##### Merge pic time = " << static_cast<double>(b - a) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl;   
 
         clock_t warp_st1 = clock();
- 		Mat matrix = LogPolarFFTTemplateMatch(rear_before, rear_now, 200, 100, idx);
+        Mat matrix;
+
+        
+        if(!VIP7K)
+            matrix = vx_LogPolarFFTTemplateMatch(rear_before, rear_now,  200, 100, idx);
+        else
+ 		    matrix = LogPolarFFTTemplateMatch(rear_before, rear_now, 200, 100, idx);
+
+        Mat temp_mat;
+        
         clock_t warp_st2 = clock();
         if(DEBUG_MSG)
-        cout<< "Compute_matrix Running time  is: " << static_cast<double>(warp_st2 - warp_st1) / CLOCKS_PER_SEC * 1000 << "ms" << endl;   
-
+        cout<< "##### Compute_matrix Running time = " << static_cast<double>(warp_st2 - warp_st1) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl;
         clock_t warp_st3 = clock();
 
 
@@ -452,30 +467,27 @@ Mat Panorama::rear_process(Mat front, Mat rear)
 		{
 			matrix_zero.at<double>(0, 2) = matrix.at<double>(0, 2);
 			matrix_zero.at<double>(1, 2) = matrix.at<double>(1, 2);
-            if(DEBUG_MSG)
-                cout << "*****************" << matrix.at<double>(0, 2)/matrix.at<double>(1, 2) << endl;
-			matrix = matrix_zero;
+        	matrix = matrix_zero;
 		}
 
         clock_t warp_st4 = clock();
         if(DEBUG_MSG)
-        cout<< "Process_matrix Running time  is: " << static_cast<double>(warp_st4 - warp_st3) / CLOCKS_PER_SEC * 1000 << "ms" << endl;   
+        cout<< "##### Process_matrix time = " << static_cast<double>(warp_st4 - warp_st3) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl;   
 
         if(DEBUG_MSG)
-        cout << "+++++++++++++Current speed is++++++++++"<< abs( matrix.at<double>(1, 2)*0.25)*3.6 << "Km/h"<<endl;
+        cout << "+++ Current speed is +++"<< abs( matrix.at<double>(1, 2)*0.25)*3.6 << "Km/h +++"<<endl;
 
         clock_t warp_st = clock();
-        warpAffine(im1, im1t, matrix, WEIGHT_BIGSIZE, INTER_NEAREST);   
+        
+        if(VIP7K)
+            im1t = vx_Affine_RGB(&im1, &matrix);
+        else
+            warpAffine(im1, im1t, matrix, WEIGHT_BIGSIZE, INTER_NEAREST);
+
         clock_t warp_en = clock();
-        if(d)
-        {
-            imwrite("debug/im1.png", im1);
-            imwrite("debug/im1_t.png", im1t);
-            cout << matrix << endl;
-            d--;
-        }
+
         if(DEBUG_MSG)
-        cout<< "warpAffine Running time  is: " << static_cast<double>(warp_en - warp_st) / CLOCKS_PER_SEC * 1000 << "ms" << endl;   
+        cout<< "##### warpAffine time = " << static_cast<double>(warp_en - warp_st) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl;
 
 
         clock_t warp_st5= clock();
@@ -500,18 +512,18 @@ Mat Panorama::rear_process(Mat front, Mat rear)
 
 		mix_image_rear(im1t, im2, alpha, alpha_1, ims);
 
-        rear_before = rear_now;
+        rear_before = rear_now.clone();
 		im1 = ims;
 		imMask1 = imMaskS;
 		imTime1 = imTime;
 
         output = ims.clone();
-        if(DEBUG_MSG)
+        if(DEBUG_MSG_IMG)
             imwrite("debug/output.png",output);
         
         clock_t warp_st6 = clock();
         if(DEBUG_MSG)
-        cout<< "End Process Running time  is: " << static_cast<double>(warp_st6 - warp_st5) / CLOCKS_PER_SEC * 1000 << "ms" << endl; 
+        cout<< "##### Blending Process = " << static_cast<double>(warp_st6 - warp_st5) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl; 
 #if 0
 
         double alphaValue = 0.6;
@@ -554,5 +566,5 @@ void Panorama::preProcess(Mat front_mask, Mat rear_mask)
 
 	weight.convertTo(weight, CV_32FC1);
 	weight /= 255.0;
-    
+
 }

@@ -2,6 +2,7 @@
 #include <opencv2/opencv.hpp>
 #include "parameter.h"
 #include <time.h> 
+#include <cv_vx.h>
 using namespace std;
 using namespace cv;
 
@@ -211,14 +212,25 @@ void init_system(class Panorama pa)
 	pa.preProcess(front_mask1, rear_mask1);
 }
 
-static int c = 5;
+static bool _init_vx_remap_F = true;
+static bool _init_vx_remap_R = true;
+
 Mat av_merge(Mat front_image, Mat rear_image, bool Reversing)
 {
 	Mat out;
+
     if(!Reversing)
     {
+        if(_init_vx_remap_F)
+        {
+            _init_vx_remap_F = false;
+            init_vx_remap(Map_Fx, Map_Fy);
+        }
         clock_t end_remap = clock();
-        remap(front_image, front_trs, Map_Fx, Map_Fy, INTER_NEAREST, BORDER_CONSTANT);
+        if(!VIP7K)
+            front_trs = vx_Remap_RGB(front_image, Reversing);
+        else
+            remap(front_image, front_trs, Map_Fx, Map_Fy, INTER_NEAREST, BORDER_CONSTANT);
         if(front_trs.size() != image_size)
     	{
             if(DEBUG_MSG)
@@ -228,21 +240,24 @@ Mat av_merge(Mat front_image, Mat rear_image, bool Reversing)
     	}
         
         clock_t end_process = clock();
-        out = pa.front_process(front_trs, rear_trs);
-        
         if(!DEBUG_MSG)
-            cout<< "###############################front process Running time  is: " << static_cast<double>(end_process - end_remap) / CLOCKS_PER_SEC * 1000 << "ms#####################" << endl;
+            cout<< "###### front process Running time  is: " << static_cast<double>(end_process - end_remap) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl;
+        out = pa.front_process(front_trs, rear_trs);
+
     }
     else
     {
-        clock_t end_remap = clock();
-        remap(rear_image, rear_trs, Map_Rx, Map_Ry, INTER_NEAREST, BORDER_CONSTANT);
-        if(0)
+        if(_init_vx_remap_R)
         {
-            imwrite("alpha/rear_image.png", rear_image);
-            imwrite("alpha/rear_trs.png", rear_trs);
-            c--;
+            _init_vx_remap_R = false;
+            init_vx_remap(Map_Rx, Map_Ry);
         }
+        clock_t end_remap = clock();
+        if(!VIP7K)
+            rear_trs = vx_Remap_RGB(rear_image, Reversing);
+        else
+            remap(rear_image, rear_trs, Map_Rx, Map_Ry, INTER_NEAREST, BORDER_CONSTANT);
+
             
         if(front_trs.size() != image_size)
     	{
@@ -251,11 +266,12 @@ Mat av_merge(Mat front_image, Mat rear_image, bool Reversing)
     		resize(front_trs, front_trs, image_size);
     		resize(rear_trs, rear_trs, image_size);
     	}
-        
-        out = pa.rear_process(front_trs, rear_trs);
         clock_t end_process = clock();
         if(DEBUG_MSG)
-            cout<< "###############################rear process Running time  is: " << static_cast<double>(end_process - end_remap) / CLOCKS_PER_SEC * 1000 << "ms#####################" << endl;
+            cout<< "##### Remap time  = " << static_cast<double>(end_process - end_remap) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl;        
+        out = pa.rear_process(front_trs, rear_trs);
+
+        
     }	
 	return out;
 }
@@ -280,7 +296,7 @@ char* av_merge_image(char * front_buf, char * rear_buf, bool Reversing)
 
 		remap(front_chess, front_chess, Map_Fx, Map_Fy, INTER_LINEAR, BORDER_CONSTANT);
 		remap(rear_chess, rear_chess, Map_Rx, Map_Ry, INTER_LINEAR, BORDER_CONSTANT);
-        if(DEBUG_MSG)
+        if(DEBUG_MSG_IMG)
         {
             imwrite("debug/F_chess.jpg", front_chess);
 		    imwrite("debug/B_chess.jpg", rear_chess);
@@ -299,7 +315,7 @@ char* av_merge_image(char * front_buf, char * rear_buf, bool Reversing)
     if(!Reversing)
     {
         front_image.data = (unsigned char *)front_buf;
-        if(DEBUG_MSG)
+        if(DEBUG_MSG_IMG)
             imwrite("debug/front_input.png", front_image);
         clock_t en_b = clock();
         if(DEBUG_MSG)
@@ -312,18 +328,18 @@ char* av_merge_image(char * front_buf, char * rear_buf, bool Reversing)
     {
         rear_image.data = (unsigned char *)rear_buf;
 
-        if(DEBUG_MSG)
+        if(DEBUG_MSG_IMG)
             imwrite("debug/rear_input.png", rear_image);
         
         clock_t en_c = clock();
         if(DEBUG_MSG)
-        cout<< "###############################bef Running time  is: " << static_cast<double>(en_c - st_b) / CLOCKS_PER_SEC * 1000 << "ms#####################" << endl;
-        out =  av_merge(front_image, rear_image, Reversing);  
+            cout<< "##### bef Running time  is: " << static_cast<double>(en_c - st_b) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl;
+        out =  av_merge(front_image, rear_image, Reversing); 
     }
 
     clock_t st_up = clock();
 
-    if(0)
+    if(DEBUG_MSG_IMG)
         imwrite("debug/up_flash.png", out);
 
 	if(ptr == NULL)
@@ -337,7 +353,7 @@ char* av_merge_image(char * front_buf, char * rear_buf, bool Reversing)
     
     clock_t en_up = clock();
     if(DEBUG_MSG)
-    cout<< "###############################Up Running time  is: " << static_cast<double>(en_up - st_up) / CLOCKS_PER_SEC * 1000 << "ms#####################" << endl;
+    cout<< "###### Up Running time  is: " << static_cast<double>(en_up - st_up) / CLOCKS_PER_SEC * 1000 << "ms#####" << endl;
 
 	return pData;
 }

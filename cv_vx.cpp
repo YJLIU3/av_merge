@@ -80,7 +80,6 @@ Mat vx_Affine_RGB(Mat * Pinput, Mat * Pmatrix){
     if(_init_vx)
     init_vx(context, graph);
     vx_uint32 SIZE = width*height*4;
-    clock_t a = clock();
     
     memcpy(imgData,(uchar *)input.data,sizeof(uchar)*SIZE);
 
@@ -100,10 +99,6 @@ Mat vx_Affine_RGB(Mat * Pinput, Mat * Pmatrix){
 
     FUNCHECK(vxProcessGraph(graph));
 
-    clock_t b = clock(); 
-    if(DEBUG_MSG)
-    cout<< "Process_Graph Running time  is: " << static_cast<double>(b - a) / CLOCKS_PER_SEC * 1000 << "ms" << endl;
-
 
     vx_output.data = (uchar *)out_buff;
 
@@ -112,7 +107,6 @@ Mat vx_Affine_RGB(Mat * Pinput, Mat * Pmatrix){
 
 
 }
-static bool _init_vx_remap = true;
 
 static vx_uint32 width_remap = 1280;
 static vx_uint32 height_remap = 720;
@@ -136,8 +130,6 @@ static uchar * out_buff_remap = (uchar *)malloc(sizeof(uchar) * width_remap*heig
 
 void init_vx_remap( Mat map_x, Mat map_y)
 {
-    _init_vx_remap = false;
-
     {
         
     vxReleaseImage(&image_input_remap);
@@ -179,9 +171,7 @@ void init_vx_remap( Mat map_x, Mat map_y)
         for(y = 0; y<height_remap; y ++)
         {
             if(x < map_x.cols && y < map_x.rows)
-                vxSetRemapPoint(remap_vx, x, y, map_x.at<float>(y, x), map_y.at<float>(y, x));//dstx, dsty, srcx, srcy.srcx=mapx,srcy=mapy
-//            else
-//                vxSetRemapPoint(remap_vx, -50, -50, -50, -50);//dstx, dsty, srcx, srcy.srcx=mapx,srcy=mapy              
+                vxSetRemapPoint(remap_vx, x, y, map_x.at<float>(y, x), map_y.at<float>(y, x));          
         }
     }
 
@@ -204,11 +194,7 @@ Mat vx_Remap_RGB(Mat input, bool Revers){
     vx_uint32 SIZE = width_remap*height_remap*3;
     memcpy(imgData_remap,(uchar *)input.data,sizeof(uchar)*SIZE);
 
-    clock_t a = clock();
-
-//  FUNCHECK(vxProcessGraph(graph_remap));
     vxProcessGraph(graph_remap);
-    clock_t b = clock(); 
 
     vx_output_remap.data = (uchar *)out_buff_remap;
 
@@ -218,13 +204,68 @@ Mat vx_Remap_RGB(Mat input, bool Revers){
         vx_output_remap = vx_output_remap(Rect(0, 0, 260, 180));
     
     if(DEBUG_MSG)
-    cout<< "Remap Process_Graph Running time  is: " << static_cast<double>(b - a) / CLOCKS_PER_SEC * 1000 << "ms" << endl;
+        
     return vx_output_remap;
 
 }
 
+#if 1
+typedef struct 
+{
+	vx_graph	graph;
+	vx_node		node;
+	int			height;
+	int			width;
+    vx_image    vx_image_input;
+    vx_image    vx_image_output;
+    void * 		imgPtrOut;
+	void * 		imgPtrIn;
+    vx_threshold threshold;
+    vx_df_image_e canny_format;
+}VXCannyOBJS;
+
+bool _ini_vx_canny = true;
+void init_vx_Canny( VXCannyOBJS & cannyobj, int up_thresh, int low_thresh)
+{
+    _ini_vx_canny = false;
+    cannyobj.height = 128;
+    cannyobj.width = 256;
+    cannyobj.canny_format = VX_DF_IMAGE_U8;
+    cannyobj.graph = vxCreateGraph(context);
+    cannyobj.vx_image_input = vxCreateImage( context, cannyobj.width, cannyobj.height, cannyobj.canny_format);
+    cannyobj.vx_image_output = vxCreateImage( context, cannyobj.width, cannyobj.height, cannyobj.canny_format);
+    cannyobj.threshold = vxCreateThreshold(context, VX_THRESHOLD_TYPE_RANGE, VX_TYPE_UINT8);
+
+    vx_int32 gsize = 3;
+    vx_uint32 upper = up_thresh;
+    vx_uint32 lower = low_thresh;
+    vxSetThresholdAttribute(cannyobj.threshold, VX_THRESHOLD_TYPE_RANGE, &lower, sizeof(lower));
+    vxSetThresholdAttribute(cannyobj.threshold, VX_THRESHOLD_TYPE_RANGE, &upper, sizeof(upper));
+
+    vx_rectangle_t rect_canny = {0,0,width,height};
+    vx_map_id map_id_canny = 0;
+    vx_imagepatch_addressing_t imgInfo_canny = VX_IMAGEPATCH_ADDR_INIT;
+    
+    vxMapImagePatch(cannyobj.vx_image_input,&rect_canny,0,&map_id_canny,&imgInfo_canny,(void**)&cannyobj.imgPtrIn,VX_WRITE_ONLY,VX_MEMORY_TYPE_HOST,0);
+    vxMapImagePatch(cannyobj.vx_image_output,&rect_canny,0,&map_id_canny,&imgInfo_canny,(void**)&cannyobj.imgPtrOut,VX_READ_ONLY,VX_MEMORY_TYPE_HOST,0);
+
+    cannyobj.node = vxCannyEdgeDetectorNode(cannyobj.graph, cannyobj.vx_image_input, cannyobj.threshold, gsize, VX_NORM_L1, cannyobj.vx_image_output);
+
+}
+#endif
 
 
+Mat vx_Canny(Mat canny_input, int up_thresh, int low_thresh)
+{
+    static VXCannyOBJS vxcannyobj;
+    vx_uint32 SIZE = canny_input.cols * canny_input.rows;
+    if(_ini_vx_canny)
+        init_vx_Canny(vxcannyobj, up_thresh, low_thresh);
+    memcpy((uchar *)vxcannyobj.imgPtrIn,(uchar *)canny_input.data,sizeof(uchar)*SIZE);
+    Mat canny_output = Mat::zeros(Size(256, 128), CV_8UC1);
+    vxProcessGraph(vxcannyobj.graph);
+    memcpy((uchar *)canny_output.data,(uchar *)vxcannyobj.imgPtrOut,sizeof(uchar)*SIZE);
+}
 
 #if 0
 int main()

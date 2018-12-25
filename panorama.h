@@ -69,5 +69,3 @@ void init_LCD(void);
 void GetMapForRemap(Mat matrix,Mat Map_Fx, Mat Map_Fy);
 
 void get_Univariate_matrix(void);
-
-Mat av_merge_image(Mat front_image, Mat rear_image, bool Resersing);
