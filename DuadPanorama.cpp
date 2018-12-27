@@ -3,6 +3,9 @@
 #include "parameter.h"
 #include <time.h> 
 #include <cv_vx.h>
+#include <cl_api.h>
+#include <sstream>
+
 using namespace std;
 using namespace cv;
 
@@ -177,40 +180,6 @@ void get_Univariate_matrix(void)
 }
 
 
-void abMatARGB2BGR(Mat imag, Mat image_out)
-{
-
-}
-
-
-Mat abMatBGR2ARGB(Mat imag)
-{
-  
-}
-
-void init_system(class Panorama pa)
-{
-	cout << "*********start**********"<<endl;
-	get_Univariate_matrix();
-	cout << "*********end**********"<<endl;
-	GetMapForRemap(matrix_affine, Map_Fx, Map_Fy);
-	GetMapForRemap(matrix_affine_r, Map_Rx, Map_Ry);
-
-	Mat front_chess = imread("F.bmp");
-	Mat rear_chess = imread("B.bmp");
-	remap(front_chess, front_chess, Map_Fx, Map_Fy, INTER_LINEAR, BORDER_CONSTANT);
-	remap(rear_chess, rear_chess, Map_Rx, Map_Ry, INTER_LINEAR, BORDER_CONSTANT);
-	imwrite("alpha/F_chess.jpg", front_chess);
-	imwrite("alpha/B_chess.jpg", rear_chess);
-
-	pa.compute_merge_matrix(frontMat, rearMat, CALIBRATOR_BOARD_SIZE, offsize_xx, offsize_yy);
-
-	front_mask1 = Mat::ones(image_size, CV_8UC1);
-
-	rear_mask1 = Mat::ones(image_size, CV_8UC1);
-
-	pa.preProcess(front_mask1, rear_mask1);
-}
 
 static bool _init_vx_remap_F = true;
 static bool _init_vx_remap_R = true;
@@ -221,16 +190,12 @@ Mat av_merge(Mat front_image, Mat rear_image, bool Reversing)
 
     if(!Reversing)
     {
-        if(_init_vx_remap_F)
-        {
-            _init_vx_remap_F = false;
-            init_vx_remap(Map_Fx, Map_Fy);
-        }
         clock_t end_remap = clock();
         if(!VIP7K)
-            front_trs = vx_Remap_RGB(front_image, Reversing);
+            rear_trs = cl_exc_remap_r(rear_image, Map_Rx, Map_Ry);
         else
-            remap(front_image, front_trs, Map_Fx, Map_Fy, INTER_NEAREST, BORDER_CONSTANT);
+            remap(rear_image, rear_trs, Map_Rx, Map_Ry, INTER_NEAREST, BORDER_CONSTANT);
+
         if(front_trs.size() != image_size)
     	{
             if(DEBUG_MSG)
@@ -247,18 +212,14 @@ Mat av_merge(Mat front_image, Mat rear_image, bool Reversing)
     }
     else
     {
-        if(_init_vx_remap_R)
-        {
-            _init_vx_remap_R = false;
-            init_vx_remap(Map_Rx, Map_Ry);
-        }
         clock_t end_remap = clock();
-        if(!VIP7K)
-            rear_trs = vx_Remap_RGB(rear_image, Reversing);
+        if(VIP7K)
+            rear_trs = cl_exc_remap_r(rear_image, Map_Rx, Map_Ry);
         else
             remap(rear_image, rear_trs, Map_Rx, Map_Ry, INTER_NEAREST, BORDER_CONSTANT);
-
-            
+        clock_t end_process = clock();
+        if(!DEBUG_MSG_IMG)
+        imwrite("debug/rear_trs.png",rear_trs);
         if(front_trs.size() != image_size)
     	{
             if(DEBUG_MSG)
@@ -266,7 +227,7 @@ Mat av_merge(Mat front_image, Mat rear_image, bool Reversing)
     		resize(front_trs, front_trs, image_size);
     		resize(rear_trs, rear_trs, image_size);
     	}
-        clock_t end_process = clock();
+        
         if(DEBUG_MSG)
             cout<< "##### Remap time  = " << static_cast<double>(end_process - end_remap) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl;        
         out = pa.rear_process(front_trs, rear_trs);
@@ -281,22 +242,64 @@ char* av_merge_image(char * front_buf, char * rear_buf, bool Reversing)
 {
 	if (init_ == true) 
 	{
+#if 0
+
+        /*************  biao ding ***************/
 		cout << "*********start**********"<<endl;
 		get_Univariate_matrix();
+     
 		cout << "*********start-1**********"<<endl;
 		GetMapForRemap(matrix_affine, Map_Fx, Map_Fy);
+    
 		GetMapForRemap(matrix_affine_r, Map_Rx, Map_Ry);
-        
-        cout << "*********start-2**********"<<endl;
+        /******************************************/
+
+
+        ofstream output( "Map_Rx.txt", ios::out | ios::binary );
+        if( ! output )
+        {
+            cerr << "Open output file error!" << endl;
+            exit( -1 );
+        }
+        output.write ((char *) Map_Rx.data, sizeof( float ) * 260 * 180);
+
+        ofstream output1( "Map_Ry.txt", ios::out | ios::binary );
+        if( ! output1 )
+        {
+            cerr << "Open output file error!" << endl;
+            exit( -1 );
+        }
+        output1.write ((char *) Map_Ry.data, sizeof( float ) * 260 * 180);
+
+#endif
+
+        ifstream input( "Map_Rx.txt", ios::in | ios::binary );
+        if( ! input )
+        {
+            cerr << "Open input file error!" << endl;
+            exit( -1 );
+        }
+        input.read( ( char * )Map_Rx.data , sizeof( float ) * 260 * 180);
+
+
+        ifstream input1( "Map_Ry.txt", ios::in | ios::binary );
+        if( ! input1 )
+        {
+            cerr << "Open input file error!" << endl;
+            exit( -1 );
+        }
+        input1.read( ( char * )Map_Ry.data , sizeof( float ) * 260 * 180);
+
+        Mat front_chess = imread("F.bmp");
+		Mat rear_chess = imread("B.bmp");
+		remap(front_chess, front_chess, Map_Fx, Map_Fy, INTER_LINEAR, BORDER_CONSTANT);
+		remap(rear_chess, rear_chess, Map_Rx, Map_Ry, INTER_LINEAR, BORDER_CONSTANT);
 
 		pa.compute_merge_matrix(frontMat, rearMat, CALIBRATOR_BOARD_SIZE, offsize_xx, offsize_yy);
 
-		Mat front_chess = imread("F.bmp");
-		Mat rear_chess = imread("B.bmp");
 
-		remap(front_chess, front_chess, Map_Fx, Map_Fy, INTER_LINEAR, BORDER_CONSTANT);
-		remap(rear_chess, rear_chess, Map_Rx, Map_Ry, INTER_LINEAR, BORDER_CONSTANT);
-        if(DEBUG_MSG_IMG)
+
+        if(!DEBUG_MSG_IMG)
         {
             imwrite("debug/F_chess.jpg", front_chess);
 		    imwrite("debug/B_chess.jpg", rear_chess);

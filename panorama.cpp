@@ -511,6 +511,7 @@ Mat Panorama::rear_process(Mat front, Mat rear)
 		}
 
 		mix_image_rear(im1t, im2, alpha, alpha_1, ims);
+        clock_t warp_st6 = clock();
 
         rear_before = rear_now.clone();
 		im1 = ims;
@@ -521,7 +522,7 @@ Mat Panorama::rear_process(Mat front, Mat rear)
         if(DEBUG_MSG_IMG)
             imwrite("debug/output.png",output);
         
-        clock_t warp_st6 = clock();
+        
         if(DEBUG_MSG)
         cout<< "##### Blending Process = " << static_cast<double>(warp_st6 - warp_st5) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl; 
 #if 0
