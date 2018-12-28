@@ -16,5 +16,7 @@ using namespace std;
 
 Mat cl_exc_remap(Mat input, Mat map_x, Mat map_y);
 Mat cl_exc_affine(Mat input,  Mat matrix);
+int init_cl_Affine(void * affinePtr[]);
+
 
 #endif

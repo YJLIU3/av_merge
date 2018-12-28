@@ -52,4 +52,22 @@ __kernel void imageRemap(__write_only image2d_t outImg,
     write_imagef(outImg, coord, data);
 }
 
+__kernel void imageCopy(__read_only image2d_t outImg,
+                           __write_only image2d_t inImg)
+{
+    int gidx = get_global_id(0);
+    int gidy = get_global_id(1);
+                                                             
+    int2 coord = (int2)(gidx, gidy);
+                                                         
+    const sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE |
+                              CLK_ADDRESS_CLAMP     |
+                              CLK_FILTER_NEAREST;
+                                                         
+                                    //int offset = gidy * width * channel;
+    int4 data = read_imagei(outImg, sampler, coord);
+                                                             
+    write_imagei(inImg, coord, data);
+}
+
                          

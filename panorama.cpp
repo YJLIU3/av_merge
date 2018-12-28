@@ -18,9 +18,8 @@ int bypast_cont = 0;
 #define grid_size 20
 #define min_match 5
 #define pi 3.1415926
-static Mat imMaskS;
 static Mat imTime;
-static Mat ims;
+static Mat ims(Size_BG, CV_8UC4 ,Scalar::all(0));
 static Mat imTime2;
 static Mat imMask2;
 //static Mat im2;
@@ -37,6 +36,8 @@ static Mat rear(image_size, CV_8UC4, Scalar::all(0));
 
 static Mat im1;
 static Mat im2;
+static void * cl_affine_Ptr[1];
+
 
 Panorama::Panorama()
 {
@@ -164,23 +165,20 @@ Mat compute_alpha(Mat mask1, Mat mask2, Mat time1, Mat time2, float timeRatioThr
 void mix_image_front(Mat image1, Mat image2, Mat alpha, Mat alpha_1, Mat& output)
 {
 #if 1	
-	Mat Image1_ROI = image1(Rect(0, front.rows, image1.cols, Size_BG.height - front.size().height));
-	Mat Image2_ROI = image2(Rect(0, front.rows, image1.cols, Size_BG.height - front.size().height));
-	Image1_ROI.copyTo(Image2_ROI);
-	//imwrite("Image1_ROI.png", Image1_ROI);
-	output = image2;
+    memcpy(image1.data, image2.data, sizeof(char)* 4 * 180*320);
+
+	output = image1;
 #endif
 }
 
-void mix_image_rear(Mat image1, Mat image2, Mat alpha, Mat alpha_1, Mat& output)
+void * mix_image_rear(Mat image1, Mat image2, Mat alpha, Mat alpha_1)
 {
 #if 1	
-	Mat Image1_ROI = image1(Rect(0, 0, Size_BG.width, Size_BG.height - front.size().height));
-	Mat Image2_ROI = image2(Rect(0, 0, Size_BG.width, Size_BG.height - front.size().height));
-	Image1_ROI.copyTo(Image2_ROI);
-//    cout << Size_BG.height - front.size().height << endl;
-	//imwrite("Image1_ROI.png", Image1_ROI);
-	output = image2;
+
+//    memcpy(cl_affine_Ptr[0], image1.data, sizeof(char)* 4 * 480*320);
+	memcpy((cl_affine_Ptr[0] + 4*Size_BG.width*(Size_BG.height - front.size().height)), (image2.data + 4*Size_BG.width*(Size_BG.height - front.size().height)), sizeof(char)* 4 * 180*320);
+
+    return cl_affine_Ptr[0];
 #endif
 }
 
@@ -193,8 +191,10 @@ void Panorama::expand(Mat input, Mat& output)
 }
 
 
+
 Mat Panorama::front_process(Mat front, Mat rear)
 {
+    
     if (bypast_cont > 23)
 		bypast_cont = 0;
 
@@ -215,6 +215,8 @@ Mat Panorama::front_process(Mat front, Mat rear)
 
 		front_before = front;
 		output = im1;
+        
+        init_cl_Affine(cl_affine_Ptr);
 	}
 	else
 	{
@@ -256,9 +258,7 @@ Mat Panorama::front_process(Mat front, Mat rear)
 
 
         bool deltaX = abs((int)matrix.at<double>(0, 2)) > 5;
-        bool deltaY = abs((int)matrix.at<double>(1, 2)) > 20;
-        
-
+        bool deltaY = abs((int)matrix.at<double>(1, 2)) > 20;  
         
           if (deltaX || deltaY)
          {
@@ -318,52 +318,21 @@ Mat Panorama::front_process(Mat front, Mat rear)
         if(DEBUG_MSG)
         cout<< "warpAffine Running time  is: " << static_cast<double>(warp_en - warp_st) / CLOCKS_PER_SEC * 1000 << "ms" << endl;   
 
-
         clock_t warp_st5= clock();
 
-    	if(idx == 2)
-		{
-			warpAffine(imMask1, imMask1t, matrix, WEIGHT_BIGSIZE, INTER_NEAREST);
-			warpAffine(imTime1, imTime1t, matrix, WEIGHT_BIGSIZE, INTER_NEAREST);
-
-			clock_t st_mer1 = clock();
-			alpha = compute_alpha(imMask1t, imMask2, imTime1t, imTime2, timeRatioThrdd);
-
-			clock_t en_mer1 = clock();
-			cout<< "compute_alpha Running time  is: " << static_cast<double>(en_mer1 - st_mer1) / CLOCKS_PER_SEC * 1000 << "ms" << endl;
-		
-			alpha_1 = Mat::ones(alpha.size(),CV_32FC1);
-			alpha_1 = alpha_1 - alpha;
-			imMaskS = imMask2.mul(alpha) + imMask1t.mul(alpha_1);
-			imTime = max(imTime1t, imTime2);
-            
-		}
 
 		mix_image_front(im1t, im2, alpha, alpha_1, ims);
 
+       
         
 		front_before = front_now;
         
 		im1 = ims;
-		imMask1 = imMaskS;
-		imTime1 = imTime;
 
         output = ims.clone();
         if(DEBUG_MSG_IMG)
             imwrite("debug/output.png",output);
-#if 0
 
-        double alphaValue = 0.6;
-        double betaValue = 1 - alphaValue;
-        cout<< Highlander.cols<<Highlander.rows<<endl;
-        
-        Mat Car_RoI = output(Rect((output.cols-Highlander.cols)/2 + matrix.at<double>(1, 2), 140, Highlander.cols, Highlander.rows));
-
-        addWeighted(Car_RoI,alphaValue,Highlander,betaValue,0.,Car_RoI);
-        clock_t warp_st6 = clock();
-        if(DEBUG_MSG)
-        cout<< "End Process Running time  is: " << static_cast<double>(warp_st6 - warp_st5) / CLOCKS_PER_SEC * 1000 << "ms" << endl;   
-#endif
 	}
 
 	return output;
@@ -378,7 +347,6 @@ Mat Panorama::rear_process(Mat front, Mat rear)
 	{
 		idx = 1;
 
-
 		expand(front, im1);
 		mergeRearMat(rear, im1);
 
@@ -391,7 +359,11 @@ Mat Panorama::rear_process(Mat front, Mat rear)
 
         rear_before = rear;
 
+        
+        init_cl_Affine(cl_affine_Ptr);
+        cout << cl_affine_Ptr[0] << "ptr" << endl;
 		output = im1;
+        memcpy(cl_affine_Ptr[0], im1.data, im1.cols * im1.rows * 4 * sizeof(char));
 	}
 	else
 	{
@@ -482,8 +454,7 @@ Mat Panorama::rear_process(Mat front, Mat rear)
         clock_t warp_st = clock();
         
         if(VIP7K)
-//            im1t = vx_Affine_RGB(im1, matrix);
-        im1t = cl_exc_affine(im1, matrix);
+            im1t = cl_exc_affine(im1, matrix);
 
         else
             warpAffine(im1, im1t, matrix, WEIGHT_BIGSIZE, INTER_NEAREST);
@@ -493,53 +464,24 @@ Mat Panorama::rear_process(Mat front, Mat rear)
         if(DEBUG_MSG)
         cout<< "##### warpAffine time = " << static_cast<double>(warp_en - warp_st) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl;
 
-
         clock_t warp_st5= clock();
+        
+		ims.data = (uchar *)mix_image_rear(im1t, im2, alpha, alpha_1);
 
-    	if(idx == 1)
-		{
-			warpAffine(imMask1, imMask1t, matrix, WEIGHT_BIGSIZE, INTER_NEAREST);
-			warpAffine(imTime1, imTime1t, matrix, WEIGHT_BIGSIZE, INTER_NEAREST);
-
-			clock_t st_mer1 = clock();
-			alpha = compute_alpha(imMask1t, imMask2, imTime1t, imTime2, timeRatioThrdd);
-
-			clock_t en_mer1 = clock();
-			cout<< "compute_alpha Running time  is: " << static_cast<double>(en_mer1 - st_mer1) / CLOCKS_PER_SEC * 1000 << "ms" << endl;
-		
-			alpha_1 = Mat::ones(alpha.size(),CV_32FC1);
-			alpha_1 = alpha_1 - alpha;
-			imMaskS = imMask2.mul(alpha) + imMask1t.mul(alpha_1);
-			imTime = max(imTime1t, imTime2);
-            
-		}
-
-		mix_image_rear(im1t, im2, alpha, alpha_1, ims);
         clock_t warp_st6 = clock();
 
         rear_before = rear_now.clone();
 		im1 = ims;
-		imMask1 = imMaskS;
-		imTime1 = imTime;
-
-        output = ims.clone();
+    
+        output.data = ims.data;
+        
         if(DEBUG_MSG_IMG)
             imwrite("debug/output.png",output);
         
         
         if(DEBUG_MSG)
         cout<< "##### Blending Process = " << static_cast<double>(warp_st6 - warp_st5) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl; 
-#if 0
 
-        double alphaValue = 0.6;
-        double betaValue = 1 - alphaValue;
-        cout<< Highlander.cols<<Highlander.rows<<endl;
-        
-        Mat Car_RoI = output(Rect((output.cols-Highlander.cols)/2 + matrix.at<double>(1, 2), 140, Highlander.cols, Highlander.rows));
-
-        addWeighted(Car_RoI,alphaValue,Highlander,betaValue,0.,Car_RoI);
-          
-#endif
 	}
 
 	return output;

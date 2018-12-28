@@ -361,19 +361,11 @@ char* av_merge_image(char * front_buf, char * rear_buf, bool Reversing)
     if(DEBUG_MSG_IMG)
         imwrite("debug/up_flash.png", out);
 
-	if(ptr == NULL)
-    {
-        ptr = new char[out.cols * out.rows *4+1024];
-        pData = (char *)(((int)ptr + 0x3F)&0xFFFFFFC0);
-    }
-
-    memcpy(pData, out.datastart,Size_Out_AGRB);
-
     
     clock_t en_up = clock();
     if(DEBUG_MSG)
     cout<< "###### Up Running time  is: " << static_cast<double>(en_up - st_up) / CLOCKS_PER_SEC * 1000 << "ms#####" << endl;
 
-	return pData;
+	return (char *)out.data;
 }
 
