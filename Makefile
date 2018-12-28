@@ -25,7 +25,7 @@ cl_api.o: cl_api.cpp
 	
 	arm-linux-ar rcs libav_merge.a  $(objects)
 	$(cc) DuadPanorama.cpp cl_api.cpp panorama.cpp fftm.cpp cv_vx.cpp -fPIC -shared -o libav_merge.so
-	cp libav_merge.a ../dvr/src/app/
+	cp libav_merge.a ../dvr/lib/
 #	cp edit ../NfsRoot/target/home/sgks_green_board/
 clean:
 	rm -rf *.o *.a *.so

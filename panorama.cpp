@@ -6,6 +6,7 @@
 #include<time.h> 
 #include "fftm.hpp"
 #include "cv_vx.h"
+#include "cl_api.h"
 
 static Mat front_before;
 static Mat front_now;
@@ -307,7 +308,8 @@ Mat Panorama::front_process(Mat front, Mat rear)
         clock_t warp_st = clock();
         
         if(VIP7K)
-            im1t = vx_Affine_RGB(&im1, &matrix);
+//            im1t = vx_Affine_RGB(im1, matrix);
+              im1t = cl_exc_affine(im1, matrix);
         else
             warpAffine(im1, im1t, matrix, WEIGHT_BIGSIZE, INTER_NEAREST);
 
@@ -480,7 +482,9 @@ Mat Panorama::rear_process(Mat front, Mat rear)
         clock_t warp_st = clock();
         
         if(VIP7K)
-            im1t = vx_Affine_RGB(&im1, &matrix);
+//            im1t = vx_Affine_RGB(im1, matrix);
+        im1t = cl_exc_affine(im1, matrix);
+
         else
             warpAffine(im1, im1t, matrix, WEIGHT_BIGSIZE, INTER_NEAREST);
 
@@ -492,7 +496,7 @@ Mat Panorama::rear_process(Mat front, Mat rear)
 
         clock_t warp_st5= clock();
 
-    	if(idx == 2)
+    	if(idx == 1)
 		{
 			warpAffine(imMask1, imMask1t, matrix, WEIGHT_BIGSIZE, INTER_NEAREST);
 			warpAffine(imTime1, imTime1t, matrix, WEIGHT_BIGSIZE, INTER_NEAREST);

@@ -2,7 +2,19 @@
 
 #define SUCCESS 0
 #define FAILURE 1
+#define Cmd_Que_Num 4
+#define Map_tab_wid 260
+#define Map_tab_hei 180
+#define input_size Size(1280, 720)
+#define map_tab_size Size(260, 180)
 
+static void *remap_ptr_table_f[Cmd_Que_Num];
+static void *remap_ptr_table_r[Cmd_Que_Num];
+
+#define Affine_W 320
+#define Affine_H 640
+
+#define Map_ch 4
 
 #define CHECK_ERROR(actual, msg) \
 if (actual != 0) \
@@ -14,30 +26,36 @@ if (actual != 0) \
 
 typedef struct 
 {
-    cl_context          context;
-    cl_command_queue    CmdQue;
-    cl_kernel           imgKernel;
-    int                 width;
-    int                 height;
-    int                 channel;
-    int                 total_size;
-    cl_device_id        *devices;
-    cl_program          program; 
-    cl_mem              inputImgMap;     
+    cl_command_queue    CmdQue[Cmd_Que_Num];
+    cl_kernel           imgKernel[Cmd_Que_Num];
+    cl_program          program[Cmd_Que_Num]; 
+    cl_mem              inputImgMap[Cmd_Que_Num];     
     cl_mem              inputImgMap_x;
     cl_mem              inputImgMap_y;
     cl_mem              outputImgMap;
-    void*               mapWriteImgPtr;
-    void*               mapReadImgPtr_t;
+    void*               mapPtr_in[Cmd_Que_Num];
+    void*               mapPtr_out;
     void*               mapWriteImgPtr_x;
     void*               mapWriteImgPtr_y;
+    
+}CLmemOBJ;
+
+typedef struct 
+{
+    cl_context          context;
+    cl_device_id        *devices;
     size_t              globaworksize[2];
     
-}CLremapOBJS;
+}CLpltOBJ;
 
-int init_cl_remap(CLremapOBJS &clremapobj, Mat map_x, Mat map_y);
+static CLpltOBJ clpltobj;
+static CLmemOBJ clmemobj;
+static CLmemOBJ clmemobj_r;
 
-/* convert the kernel file into a string */
+
+int init_cl_remap(CLpltOBJ &pltobj, CLmemOBJ &memobj, Mat map_x, Mat map_y);
+
+/*================== convert the kernel file into a string ==================*/
 int convertToString(const char *filename, std::string& s)
 {
     size_t size;
@@ -68,59 +86,13 @@ int convertToString(const char *filename, std::string& s)
     return FAILURE;
 }
 
-#if 0
-int main(int argc, char* argv[])
+int init_cl_plt(CLpltOBJ &pltobj)
 {
-	struct timeval tv, tv1;
-
-    Mat map_x = Mat::zeros(Size(260, 180), CV_32FC1);
-    Mat map_y = Mat::zeros(Size(260, 180), CV_32FC1);
-    for(int i = 0; i < 180; i++)
-        for(int j =0; j < 260; j++)
-        {
-            map_x.at<float>(i, j) = (float)(j+50);
-            map_y.at<float>(i, j) = (float)(i+50);
-        }
-    Mat input_mat = imread("input.png");
-    int i=0;
-    float f;
-    while(1){        
-    Mat input_mat = imread("input.png");
-    cvtColor(input_mat, input_mat, CV_BGR2BGRA);
-
-
-    gettimeofday(&tv, NULL);
-    Mat output = cl_exc_remap(input_mat, map_x,  map_y);
-    gettimeofday(&tv1, NULL);
-
-    f = tv1.tv_sec*1000000.0 + tv1.tv_usec;
-    f -= tv.tv_sec*1000000.0 + tv.tv_usec;
-    f = f/1000.0;
-	cout << "FrmNo."<<(i+1)<<"\tinterval "<< f <<endl;
-
-
-    Mat ROI = output(Rect(0, 0, 260, 180));
-
-    imwrite("output.png", ROI);
-    }
-
-    
-    return 0;
-}
-
-#endif
-
-int  init_cl_remap(CLremapOBJS &clremapobj, Mat map_x, Mat map_y)
-{
-    if(clremapobj.context != NULL)
-        clReleaseContext(clremapobj.context);  
-    clremapobj.width = 260;
-    clremapobj.height = 180;
-    clremapobj.channel = 4;
-    clremapobj.total_size = clremapobj.height * clremapobj.width;
+    if(pltobj.context != NULL)
+        clReleaseContext(pltobj.context);
     cl_uint numPlatforms;
     cl_platform_id platform = NULL;
-    cl_int    status = clGetPlatformIDs(0, NULL, &numPlatforms);
+    int    status = clGetPlatformIDs(0, NULL, &numPlatforms);
     if (status != CL_SUCCESS)
     {
         cout << "Error: Getting platforms!" << endl;
@@ -133,41 +105,58 @@ int  init_cl_remap(CLremapOBJS &clremapobj, Mat map_x, Mat map_y)
         platform = platforms[0];
         free(platforms);
     }
-    cout << "1" << endl;
+   
     cl_uint             numDevices = 0;
     status = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 0, NULL, &numDevices);
-    if (numDevices == 0)    //no GPU available.
+    if (numDevices == 0)
     {
         cout << "No GPU device available." << endl;
         cout << "Choose CPU as default device." << endl;
         status = clGetDeviceIDs(platform, CL_DEVICE_TYPE_CPU, 0, NULL, &numDevices);
-        clremapobj.devices = (cl_device_id*)malloc(numDevices * sizeof(cl_device_id));
-        status = clGetDeviceIDs(platform, CL_DEVICE_TYPE_CPU, numDevices, clremapobj.devices, NULL);
+        pltobj.devices = (cl_device_id*)malloc(numDevices * sizeof(cl_device_id));
+        status = clGetDeviceIDs(platform, CL_DEVICE_TYPE_CPU, numDevices, pltobj.devices, NULL);
     }
     else
     {
-        clremapobj.devices = (cl_device_id*)malloc(numDevices * sizeof(cl_device_id));
-        status = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, numDevices, clremapobj.devices, NULL);
+        pltobj.devices = (cl_device_id*)malloc(numDevices * sizeof(cl_device_id));
+        status = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, numDevices, pltobj.devices, NULL);
     }
-    clremapobj.context = clCreateContext(NULL,1, clremapobj.devices,NULL,NULL,NULL);
-    if(clremapobj.context == NULL)
-        cout << "err" << endl;
-    /*Step 4: Creating command queue associate with the context.*/
-    cout << "2" << endl;
+    pltobj.context = clCreateContext(NULL,1, pltobj.devices,NULL,NULL,NULL);
+    if(pltobj.context == NULL)
+        cout << "Create GPU context false!" << endl;
 
-    clremapobj.CmdQue = clCreateCommandQueue(clremapobj.context, clremapobj.devices[0], 0, NULL);
-    cout << "3" << endl;
+    pltobj.globaworksize[0] = Map_tab_wid;
+    pltobj.globaworksize[1] = Map_tab_hei;
 
+
+    return status;
+}
+
+int init_cl_mem_obj(CLpltOBJ &pltobj, CLmemOBJ &memobj, Mat map_x, Mat map_y, void *GC50UT_ptr[])
+{
+    int status;
+    int data_size = Map_tab_wid * Map_tab_hei;
     const char *filename = "rotate.cl";
     string sourceStr;
     status = convertToString(filename, sourceStr);
     const char *source = sourceStr.c_str();
     size_t sourceSize[] = {strlen(source)};
-    clremapobj.program = clCreateProgramWithSource(clremapobj.context, 1, &source, sourceSize, &status);
-
-    status=clBuildProgram(clremapobj.program, 1, clremapobj.devices, NULL, NULL, NULL);
-    CHECK_ERROR(status, "clCreateProgarm failed.");
-    cout << "4" << endl;
+    
+    for(int i = 0; i < Cmd_Que_Num; i++)
+    {
+        memobj.CmdQue[i] = clCreateCommandQueue(pltobj.context, pltobj.devices[0], 0, &status);
+        CHECK_ERROR(status, "clCreateCommamdQueue failed.");
+        memobj.program[i] = clCreateProgramWithSource(pltobj.context, 1, &source, sourceSize, &status);
+        status = clBuildProgram(memobj.program[i], 1, pltobj.devices, NULL, NULL, NULL);
+        CHECK_ERROR(status, "clCreateProgarm failed.");
+        memobj.imgKernel[i] = clCreateKernel(memobj.program[i], "imageRemap", &status);
+        CHECK_ERROR(status, "clCreateKernel failed.");
+    }
+    
+    memobj.inputImgMap_x = clCreateBuffer(pltobj.context,CL_MEM_USE_HOST_PTR, data_size * sizeof(float),map_x.data,&status);
+    CHECK_ERROR(status, "clCreateMapTable failed.");
+    memobj.inputImgMap_y = clCreateBuffer(pltobj.context,CL_MEM_USE_HOST_PTR, data_size * sizeof(float),map_y.data,&status);
+    CHECK_ERROR(status, "clCreateMapTable failed.");
 
     cl_image_format img_format;
     img_format.image_channel_data_type = CL_UNSIGNED_INT8;
@@ -184,19 +173,6 @@ int  init_cl_remap(CLremapOBJS &clremapobj, Mat map_x, Mat map_y)
     pixelDesc.image_array_size = 0;
     pixelDesc.image_slice_pitch = 0;
 
-    cout << "5" << endl;
-
-    clremapobj.inputImgMap_x = clCreateBuffer(clremapobj.context,CL_MEM_USE_HOST_PTR, clremapobj.total_size * sizeof(float),map_x.data,NULL);
-    clremapobj.inputImgMap_y = clCreateBuffer(clremapobj.context,CL_MEM_USE_HOST_PTR, clremapobj.total_size * sizeof(float),map_y.data,NULL);
-
-    cout << "6" << endl;
-
-
-    clremapobj.inputImgMap = clCreateImage(clremapobj.context, CL_MEM_READ_ONLY || CL_MEM_ALLOC_HOST_PTR, &img_format, &pixelDesc, NULL, &status);
-    CHECK_ERROR(status, "clCreateImage2D failed. (inputImgMap)");
-    clremapobj.outputImgMap = clCreateImage(clremapobj.context, CL_MEM_WRITE_ONLY || CL_MEM_ALLOC_HOST_PTR, &img_format, &pixelDesc, NULL, &status);
-    CHECK_ERROR(status, "clCreateImage2D failed. (outputImage)");
-    
     size_t imageOrigin[3];
     size_t imageRegion[3];
 
@@ -207,55 +183,102 @@ int  init_cl_remap(CLremapOBJS &clremapobj, Mat map_x, Mat map_y)
     imageRegion[0] = 1280;
     imageRegion[1] = 720;
     imageRegion[2] = 1;
-
+    size_t imageRowPitch_in = 1280 * sizeof(char) * Map_ch;
     
-    size_t imageOrigin_out[3];
-    size_t imageRegion_out[3];
+    for(int i = 0; i < Cmd_Que_Num; i++)
+    {
+        memobj.inputImgMap[i] = clCreateImage(pltobj.context, CL_MEM_READ_ONLY || CL_MEM_ALLOC_HOST_PTR, &img_format, &pixelDesc, NULL, &status);
+        CHECK_ERROR(status, "clCreateImage2D failed. (inputImgMap)");
+        memobj.mapPtr_in[i] = clEnqueueMapImage( memobj.CmdQue[i], memobj.inputImgMap[i], CL_TRUE, CL_MAP_WRITE, 
+        imageOrigin, imageRegion, &imageRowPitch_in, NULL, 0, NULL, NULL, &status);
+        CHECK_ERROR(status, "clEnqueueMapBuffer failed. (resultBuf)");
+        GC50UT_ptr[i] = memobj.mapPtr_in[i];
+        cout << GC50UT_ptr[i] << endl;
+    }
+    memobj.outputImgMap = clCreateImage(pltobj.context, CL_MEM_WRITE_ONLY || CL_MEM_ALLOC_HOST_PTR, &img_format, &pixelDesc, NULL, &status);
+    CHECK_ERROR(status, "clCreateImage2D failed. (outputImage)");
+//    memobj.mapPtr_out = clEnqueueMapImage( memobj.CmdQue[i], memobj.outputImgMap, CL_TRUE, CL_MAP_READ, 
+//        imageOrigin, imageRegion,&imageRowPitch_in, NULL, 0, NULL, NULL, &status);
+//    CHECK_ERROR(status, "clEnqueueMapBuffer failed. (resultBuf)");
+    
+    for(int i = 0; i < Cmd_Que_Num; i++)
+    {
+        int argIdx = 0;
+        status |= clSetKernelArg(memobj.imgKernel[i], argIdx++, sizeof(cl_mem), &memobj.outputImgMap);
+        status |= clSetKernelArg(memobj.imgKernel[i], argIdx++, sizeof(cl_mem), &memobj.inputImgMap[i]);
+        status |= clSetKernelArg(memobj.imgKernel[i], argIdx++, sizeof(cl_mem), &memobj.inputImgMap_x);
+        status |= clSetKernelArg(memobj.imgKernel[i], argIdx++, sizeof(cl_mem), &memobj.inputImgMap_y);
+    }
+    
+    return status;
+}
+extern "C" int gpu7k_get_viraddr(void* addrarray_f[], void* addrarray_r[], int size, int addr_cnt);
 
-    imageOrigin_out[0] = 0;
-    imageOrigin_out[1] = 0;
-    imageOrigin_out[2] = 0;
+int gpu7k_get_viraddr(void* addrarray_f[], void* addrarray_r[], int size, int addr_cnt)
+{
+    int status;
+    static Mat Map_Fx = Mat(map_tab_size, CV_32FC1);
+    static Mat Map_Fy = Mat(map_tab_size, CV_32FC1);
+    static Mat Map_Rx = Mat(map_tab_size, CV_32FC1);
+    static Mat Map_Ry = Mat(map_tab_size, CV_32FC1);
 
-    imageRegion_out[0] = 260;
-    imageRegion_out[1] = 180;
-    imageRegion_out[2] = 1;
-
-    size_t imageRowPitch_in = 1280 * sizeof(char) * clremapobj.channel;
-
-    clremapobj.mapReadImgPtr_t = clEnqueueMapImage( clremapobj.CmdQue, clremapobj.outputImgMap, CL_TRUE, CL_MAP_READ, 
-        imageOrigin, imageRegion,&imageRowPitch_in, NULL, 0, NULL, NULL, &status);
-    CHECK_ERROR(status, "clEnqueueMapBuffer failed. (resultBuf)");
-
-    clremapobj.globaworksize[0] = clremapobj.width;
-    clremapobj.globaworksize[1] = clremapobj.height;
-
-    clremapobj.imgKernel = clCreateKernel(clremapobj.program, "imageRemap", &status);
-    CHECK_ERROR(status, "clCreateKernel failed.");
+    ifstream input( "Map_Rx.txt", ios::in | ios::binary );
+    if( ! input )
+    {
+        cerr << "Open input file error!" << endl;
+        exit( -1 );
+    }
+    input.read( ( char * )Map_Rx.data , sizeof( float ) * Map_tab_wid * Map_tab_hei);
     
     
-    int argIdx = 0;
-    status |= clSetKernelArg(clremapobj.imgKernel, argIdx++, sizeof(cl_mem), &clremapobj.outputImgMap);
-    status |= clSetKernelArg(clremapobj.imgKernel, argIdx++, sizeof(cl_mem), &clremapobj.inputImgMap);
-    status |= clSetKernelArg(clremapobj.imgKernel, argIdx++, sizeof(cl_mem), &clremapobj.inputImgMap_x);
-    status |= clSetKernelArg(clremapobj.imgKernel, argIdx++, sizeof(cl_mem), &clremapobj.inputImgMap_y);
+    ifstream input1( "Map_Ry.txt", ios::in | ios::binary );
+    if( ! input1 )
+    {
+        cerr << "Open input file error!" << endl;
+        exit( -1 );
+    }
+    input1.read( ( char * )Map_Ry.data , sizeof( float ) * Map_tab_wid * Map_tab_hei);
+
+    Map_Fx = Map_Rx.clone();
+    Map_Fy = Map_Ry.clone();
+    
+    memset(&clpltobj, 0x00, sizeof(CLpltOBJ));
+    memset(&clmemobj, 0x00, sizeof(CLmemOBJ));
+    memset(&clmemobj_r, 0x00, sizeof(CLmemOBJ));
+    status = init_cl_plt(clpltobj);
+    status |= init_cl_mem_obj(clpltobj, clmemobj, Map_Fx, Map_Fy, addrarray_f);
+    status |= init_cl_mem_obj(clpltobj, clmemobj_r, Map_Rx, Map_Ry, addrarray_r);
+
+    for(int i = 0; i < Cmd_Que_Num; i++)
+    {
+        remap_ptr_table_f[i] = addrarray_f[i];
+        remap_ptr_table_r[i] = addrarray_r[i];        
+    }
 
 }
-
-
     
-Mat cl_exc_remap_r(Mat input, Mat map_x, Mat map_y)
+Mat cl_exc_remap(Mat input, Mat map_x, Mat map_y)
 {
-    static bool _int = true;
-    static CLremapOBJS clremapobj;    
-    static Mat output = Mat::zeros(Size(1280, 720), CV_8UC4);
+    static Mat output = Mat::zeros(input_size, CV_8UC4);
     static Mat ROI = Mat::zeros(Size(260, 180), CV_8UC4);
-    if(_int)
+
+    cl_event ndrEvt;
+    for(int i = 0; i < Cmd_Que_Num; i++)
     {
-        cout << "init" << endl;
-        _int = false;
-        memset(&clremapobj, 0x00, sizeof(CLremapOBJS));
-        init_cl_remap(clremapobj, map_x, map_y);
-            static size_t imageOrigin[3];
+        if(input.data == remap_ptr_table_f[i])
+        {
+            int status = clEnqueueNDRangeKernel(clmemobj.CmdQue[i], clmemobj.imgKernel[i], 2, NULL,
+                    clpltobj.globaworksize, NULL, 0, NULL, &ndrEvt);
+            clFinish(clmemobj.CmdQue[i]);
+        }
+        if(input.data == remap_ptr_table_r[i])
+        {
+            int status = clEnqueueNDRangeKernel(clmemobj_r.CmdQue[i], clmemobj_r.imgKernel[i], 2, NULL,
+                    clpltobj.globaworksize, NULL, 0, NULL, &ndrEvt);
+            clFinish(clmemobj_r.CmdQue[i]);
+        }
+    }
+    static size_t imageOrigin[3];
     static size_t imageRegion[3];
 
     imageOrigin[0] = 0;
@@ -265,71 +288,143 @@ Mat cl_exc_remap_r(Mat input, Mat map_x, Mat map_y)
     imageRegion[0] = 1280;
     imageRegion[1] = 720;
     imageRegion[2] = 1;
+    size_t imageRowPitch_in = 1280 * sizeof(char) * Map_ch;
+    clmemobj.mapPtr_out = clEnqueueMapImage( clmemobj.CmdQue[3], clmemobj.outputImgMap, CL_TRUE, CL_MAP_READ, 
+         imageOrigin, imageRegion,&imageRowPitch_in, NULL, 0, NULL, NULL, NULL); 
+
     
-    size_t imageRowPitch_in = 1280 * sizeof(char) * clremapobj.channel;
-    clEnqueueWriteImage( clremapobj.CmdQue, clremapobj.inputImgMap, CL_TRUE,
-            imageOrigin, imageRegion, imageRowPitch_in, NULL, input.data, NULL, NULL, NULL);
- 
-    }
-
-    struct timeval tv, tv1;
-    long double f;
-    gettimeofday(&tv, NULL);
-
-
-    cl_event ndrEvt;
-    int status = clEnqueueNDRangeKernel(clremapobj.CmdQue, clremapobj.imgKernel, 2, NULL,
-                    clremapobj.globaworksize, NULL, 0, NULL, &ndrEvt);
-
-    clFinish(clremapobj.CmdQue);
-
-    gettimeofday(&tv1, NULL);
-
-    f = (tv1.tv_sec-tv.tv_sec)*1000.0 + (tv1.tv_usec - tv.tv_usec)/1000.0;
-	cout << "FrmNo."<<"_"<<"\tinterval "<< f <<endl;
-    
-    output.data = (uchar *)clremapobj.mapReadImgPtr_t;
-    //output(Rect(0, 0, 260, 180)).copyTo(ROI);
-    ROI = output(Rect(0, 0, 260, 180));
-    return ROI;
-}
-
-Mat cl_exc_remap_f(Mat input, Mat map_x, Mat map_y)
-{
-    static bool _int = true;
-    static CLremapOBJS clremapobj;    
-    static Mat output = Mat::zeros(Size(1280, 720), CV_8UC4);
-    static Mat ROI = Mat::zeros(Size(260, 180), CV_8UC4);
-    if(_int)
-    {
-        cout << "init" << endl;
-        _int = false;
-        memset(&clremapobj, 0x00, sizeof(CLremapOBJS));
-        init_cl_remap(clremapobj, map_x, map_y);
-    }
-
-    struct timeval tv, tv1;
-    float f;
-
-    gettimeofday(&tv, NULL);
-    
-    memcpy(clremapobj.mapWriteImgPtr, (char *)input.data, input.cols * input.rows * sizeof(CV_8UC4));
-
-    cl_event ndrEvt;
-    int status = clEnqueueNDRangeKernel(clremapobj.CmdQue, clremapobj.imgKernel, 2, NULL,
-                    clremapobj.globaworksize, NULL, 0, NULL, &ndrEvt);
-    cout << status << endl;
-    clFinish(clremapobj.CmdQue);
-
-    gettimeofday(&tv1, NULL);
-
-    f = tv1.tv_sec*1000000.0 + tv1.tv_usec;
-    f -= tv.tv_sec*1000000.0 + tv.tv_usec;
-    f = f/1000.0;
-	cout << "FrmNo."<<"_"<<"\tinterval "<< f <<endl;
-    
-    output.data = (uchar *)clremapobj.mapReadImgPtr_t;
+    output.data = (uchar *)clmemobj.mapPtr_out;
     output(Rect(0, 0, 260, 180)).copyTo(ROI);
     return ROI;
 }
+/************************************************************* cl warpAffine ******************************************************************************************/
+typedef struct 
+{
+    cl_command_queue    CmdQue;
+    cl_kernel           imgKernel;
+    cl_program          program; 
+    cl_mem              inputImgMap;     
+    cl_mem              affine_matrix;
+    cl_mem              outputImgMap;
+    void*               mapPtr_in;
+    void*               mapPtr_out;
+    void*               affine_matrix_Ptr;
+    
+}CLaffineOBJ;
+
+
+int init_cl_affine_obj(CLpltOBJ &pltobj, CLaffineOBJ &memobj)
+{
+    int status;
+    int data_size = Affine_H * Affine_W;
+    const char *filename = "rotate.cl";
+    string sourceStr;
+    status = convertToString(filename, sourceStr);
+    const char *source = sourceStr.c_str();
+    size_t sourceSize[] = {strlen(source)};
+    
+    memobj.CmdQue = clCreateCommandQueue(pltobj.context, pltobj.devices[0], 0, &status);
+    CHECK_ERROR(status, "clCreateCommamdQueue failed.");
+    memobj.program = clCreateProgramWithSource(pltobj.context, 1, &source, sourceSize, &status);
+    status = clBuildProgram(memobj.program, 1, pltobj.devices, NULL, NULL, NULL);
+    CHECK_ERROR(status, "clCreateProgarm failed.");
+    memobj.imgKernel = clCreateKernel(memobj.program, "imageAffine", &status);
+    CHECK_ERROR(status, "clCreateKernel failed.");
+    memobj.affine_matrix = clCreateBuffer(pltobj.context,CL_MEM_READ_ONLY || CL_MEM_ALLOC_HOST_PTR, 6 * sizeof(float), NULL,&status);
+    CHECK_ERROR(status, "clCreateMapTable failed.");
+    memobj.affine_matrix_Ptr = clEnqueueMapBuffer(memobj.CmdQue, memobj.affine_matrix, CL_TRUE, CL_MAP_WRITE,
+                        0, 6 * sizeof(float), 0, NULL, NULL, NULL);
+
+    cl_image_format img_format;
+    img_format.image_channel_data_type = CL_UNSIGNED_INT8;
+    img_format.image_channel_order = CL_RGBA;
+
+    cl_image_desc pixelDesc;
+    pixelDesc.image_type = CL_MEM_OBJECT_IMAGE2D;
+    pixelDesc.image_width = Affine_W;
+    pixelDesc.image_height = Affine_H;
+    pixelDesc.image_depth = 0;
+    pixelDesc.num_mip_levels = 0;
+    pixelDesc.num_samples = 0;
+    pixelDesc.image_row_pitch = 0;
+    pixelDesc.image_array_size = 0;
+    pixelDesc.image_slice_pitch = 0;
+
+    size_t imageOrigin[3];
+    size_t imageRegion[3];
+
+    imageOrigin[0] = 0;
+    imageOrigin[1] = 0;
+    imageOrigin[2] = 0;
+
+    imageRegion[0] = Affine_W;
+    imageRegion[1] = Affine_H;
+    imageRegion[2] = 1;
+    size_t imageRowPitch_in = Affine_W * sizeof(char) * Map_ch;
+    
+    memobj.inputImgMap = clCreateImage(pltobj.context, CL_MEM_READ_ONLY || CL_MEM_ALLOC_HOST_PTR, &img_format, &pixelDesc, NULL, &status);
+    CHECK_ERROR(status, "clCreateImage2D failed. (inputImgMap)");
+    memobj.mapPtr_in = clEnqueueMapImage( memobj.CmdQue, memobj.inputImgMap, CL_TRUE, CL_MAP_WRITE, 
+    imageOrigin, imageRegion, &imageRowPitch_in, NULL, 0, NULL, NULL, &status);
+    CHECK_ERROR(status, "clEnqueueMapBuffer failed. (resultBuf)");
+
+
+
+    memobj.outputImgMap = clCreateImage(pltobj.context, CL_MEM_WRITE_ONLY || CL_MEM_ALLOC_HOST_PTR, &img_format, &pixelDesc, NULL, &status);
+    CHECK_ERROR(status, "clCreateImage2D failed. (outputImage)");
+    memobj.mapPtr_out = clEnqueueMapImage( memobj.CmdQue, memobj.outputImgMap, CL_TRUE, CL_MAP_READ, 
+        imageOrigin, imageRegion,&imageRowPitch_in, NULL, 0, NULL, NULL, &status);
+    CHECK_ERROR(status, "clEnqueueMapBuffer failed. (resultBuf)");
+    
+ 
+    int argIdx = 0;
+    status |= clSetKernelArg(memobj.imgKernel, argIdx++, sizeof(cl_mem), &memobj.outputImgMap);
+    status |= clSetKernelArg(memobj.imgKernel, argIdx++, sizeof(cl_mem), &memobj.inputImgMap);
+    status |= clSetKernelArg(memobj.imgKernel, argIdx++, sizeof(cl_mem), &memobj.affine_matrix);
+
+    
+    return status;
+}
+
+Mat cl_exc_affine(Mat input,  Mat matrix)
+{
+
+    double _rotate[2][2] = {
+        {matrix.at<double>(0, 0), matrix.at<double>(0, 1)},
+        {matrix.at<double>(1, 0), matrix.at<double>(1, 1)}
+    };
+    Mat rotate_mat = Mat(2, 2, CV_64FC1, _rotate); 
+    Mat affine_parameter = rotate_mat.inv();
+    float mat[2][3] = {
+        {(float)affine_parameter.at<double>(0, 0), (float)affine_parameter.at<double>(0, 1),(float)(-matrix.at<double>(0, 2))},
+        {(float)affine_parameter.at<double>(1, 0), (float)affine_parameter.at<double>(1, 1),(float)(-matrix.at<double>(1, 2))},
+    };
+
+    static CLaffineOBJ affineobj;
+    static size_t   globaworksize[2];
+    globaworksize[0] = input.cols;
+    globaworksize[1] = input.rows;
+    static bool init = 1;
+    if(init)
+    {
+        init = 0;
+        init_cl_affine_obj(clpltobj, affineobj);
+    }
+    static Mat output = Mat::zeros(input.size(), CV_8UC4);
+    memcpy(affineobj.mapPtr_in, input.data, sizeof(CV_8UC4)*input.cols*input.rows);
+    memcpy(affineobj.affine_matrix_Ptr, mat, sizeof(float)*6);
+
+    cl_event ndrEvt;
+    
+    int status = clEnqueueNDRangeKernel(affineobj.CmdQue, affineobj.imgKernel, 2, NULL,
+            globaworksize, NULL, 0, NULL, &ndrEvt);
+    clFinish(affineobj.CmdQue);
+
+
+    output.data = (uchar *)affineobj.mapPtr_out;
+    return output;
+}
+
+
+
 

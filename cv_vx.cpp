@@ -40,9 +40,18 @@ void init_vx(vx_context& Pcontext, vx_graph& Pgraph)
     vx_output = Mat::zeros(Size(width, height),CV_8UC4);
 
     context = vxCreateContext();
+    cout << &context << endl;
+    
     graph = vxCreateGraph(context);
+
+    cout << &graph << endl;
+    
     image_input = vxCreateImage(context,width,height,VX_DF_IMAGE_RGBX);
+
+    cout << &image_input << endl;
     OUT = vxCreateImage(context,width,height,VX_DF_IMAGE_RGBX);
+
+    cout << &OUT <<endl;
     for(int i = 0; i < 3; i++)
     {
         image_RGB[i] = vxCreateImage(context, width, height, VX_DF_IMAGE_U8);
@@ -70,18 +79,16 @@ void init_vx(vx_context& Pcontext, vx_graph& Pgraph)
 }
 
 
-Mat vx_Affine_RGB(Mat * Pinput, Mat * Pmatrix){
+Mat vx_Affine_RGB(Mat input, Mat matrix){
 
     // create graph
-
-    Mat input, matrix;
-    input = *Pinput;
-    matrix = *Pmatrix;
+    Mat test = Mat::zeros(Size(320, 640), CV_8UC4);
     if(_init_vx)
     init_vx(context, graph);
     vx_uint32 SIZE = width*height*4;
-    
     memcpy(imgData,(uchar *)input.data,sizeof(uchar)*SIZE);
+    memcpy((uchar *)test.data, imgData, sizeof(uchar)*SIZE);
+    imwrite("debug/vx_affine_input.png", test);
 
     double _rotate[2][2] = {
         {matrix.at<double>(0, 0), matrix.at<double>(0, 1)},
@@ -97,7 +104,7 @@ Mat vx_Affine_RGB(Mat * Pinput, Mat * Pmatrix){
 
     FUNCHECK(vxCopyMatrix(wrap_affine_matrix , mat, VX_WRITE_ONLY, VX_MEMORY_TYPE_HOST));
 
-    FUNCHECK(vxProcessGraph(graph));
+    vxProcessGraph(graph);
 
 
     vx_output.data = (uchar *)out_buff;

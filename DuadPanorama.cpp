@@ -192,7 +192,7 @@ Mat av_merge(Mat front_image, Mat rear_image, bool Reversing)
     {
         clock_t end_remap = clock();
         if(!VIP7K)
-            rear_trs = cl_exc_remap_r(rear_image, Map_Rx, Map_Ry);
+            rear_trs = cl_exc_remap(rear_image, Map_Rx, Map_Ry);
         else
             remap(rear_image, rear_trs, Map_Rx, Map_Ry, INTER_NEAREST, BORDER_CONSTANT);
 
@@ -214,7 +214,7 @@ Mat av_merge(Mat front_image, Mat rear_image, bool Reversing)
     {
         clock_t end_remap = clock();
         if(VIP7K)
-            rear_trs = cl_exc_remap_r(rear_image, Map_Rx, Map_Ry);
+            rear_trs = cl_exc_remap(rear_image, Map_Rx, Map_Ry);
         else
             remap(rear_image, rear_trs, Map_Rx, Map_Ry, INTER_NEAREST, BORDER_CONSTANT);
         clock_t end_process = clock();
@@ -270,6 +270,22 @@ char* av_merge_image(char * front_buf, char * rear_buf, bool Reversing)
             exit( -1 );
         }
         output1.write ((char *) Map_Ry.data, sizeof( float ) * 260 * 180);
+        
+        ofstream output2( "Map_Fy.txt", ios::out | ios::binary );
+        if( ! output2 )
+        {
+            cerr << "Open output file error!" << endl;
+            exit( -1 );
+        }
+        output2.write ((char *) Map_Fy.data, sizeof( float ) * 260 * 180);
+
+        ofstream output3( "Map_Fx.txt", ios::out | ios::binary );
+        if( ! output3 )
+        {
+            cerr << "Open output file error!" << endl;
+            exit( -1 );
+        }
+        output3.write ((char *) Map_Fx.data, sizeof( float ) * 260 * 180);        
 
 #endif
 
