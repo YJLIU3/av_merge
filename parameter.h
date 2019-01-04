@@ -5,7 +5,7 @@ using namespace cv;
 
 #define DEBUG_MSG_IMG false
 
-#define DEBUG_MSG false
+#define DEBUG_MSG true
 #define VIP7K 1
 
 

@@ -311,10 +311,6 @@ char* av_merge_image(char * front_buf, char * rear_buf, bool Reversing)
 		remap(front_chess, front_chess, Map_Fx, Map_Fy, INTER_LINEAR, BORDER_CONSTANT);
 		remap(rear_chess, rear_chess, Map_Rx, Map_Ry, INTER_LINEAR, BORDER_CONSTANT);
 
-		pa.compute_merge_matrix(frontMat, rearMat, CALIBRATOR_BOARD_SIZE, offsize_xx, offsize_yy);
-
-
-
         if(!DEBUG_MSG_IMG)
         {
             imwrite("debug/F_chess.jpg", front_chess);
@@ -364,7 +360,7 @@ char* av_merge_image(char * front_buf, char * rear_buf, bool Reversing)
     
     clock_t en_up = clock();
     if(DEBUG_MSG)
-    cout<< "###### Up Running time  is: " << static_cast<double>(en_up - st_up) / CLOCKS_PER_SEC * 1000 << "ms#####" << endl;
+    cout<< "##### Up Running time  is: " << static_cast<double>(en_up - st_up) / CLOCKS_PER_SEC * 1000 << "ms#####" << endl;
 
 	return (char *)out.data;
 }

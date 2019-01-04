@@ -11,9 +11,10 @@
 static Mat front_before;
 static Mat front_now;
 static Mat rear_before;
-static Mat rear_now;
+static Mat rear_now = Mat::zeros(image_size, CV_8UC1);
 static Mat matrix_bypast[25];
 int bypast_cont = 0;
+extern void *remap_gray_ptr[1];
 
 #define grid_size 20
 #define min_match 5
@@ -49,63 +50,9 @@ Panorama::~Panorama()
 
 }
 
-
 void Panorama::compute_merge_matrix(Mat frontChessboard, Mat rearChessboard,
 	Size board_size, int offset_x, int offset_y)
 {
-	Mat frontChessboardGray, rearChessboardGray;
-	vector<Point2f> rearCornersArray1, frontCornersArray1;
-	vector<Point2f> frontCorners, rearCorners;
-	if (0)
-	{
-	}
-	else
-	{
-		Point2f frontCornersArray[40];
-		Point2f rearCornersArray[40];
-		Point2f F2R[40];
-
-		for (int i = 0; i < 10; i++)
-		{
-			if (i == 0)
-			{
-				F2R[i].x = 0;
-				F2R[i + 10].x = 0;
-				F2R[i + 20].x = 0;
-				F2R[i + 30].x = 0;
-			}
-			else
-			{
-				F2R[i].x = i * grid_size - 1;
-				F2R[i + 10].x = i * grid_size - 1;
-				F2R[i + 20].x = i * grid_size - 1;
-				F2R[i + 30].x = i * grid_size - 1;
-			}
-
-			F2R[i].y = 0;
-			F2R[i + 10].y = grid_size - 1;
-			F2R[i + 20].y = grid_size * 2 - 1;
-			F2R[i + 30].y = grid_size * 3 - 1;
-		}
-		for (int i = 0; i < 40; i++)
-		{
-			frontCornersArray[i] = F2R[i];
-		}
-		for (int i = 0; i < 40; i++)
-		{
-			rearCornersArray[i] = F2R[39 - i];
-		}
-
-		rearCornersArray1.clear(); frontCornersArray1.clear();
-		for (int i = 0; i < 40; i++)
-		{
-			frontCornersArray[i].y += offset_y + 61;
-			frontCornersArray[i].x += offset_x;
-			rearCornersArray1.push_back(rearCornersArray[i]);
-			frontCornersArray1.push_back(frontCornersArray[i]);
-		}
-		merge_matrix = estimateRigidTransform(rearCornersArray1, frontCornersArray1, false);
-	}
 }
 void Panorama::mergeFrontRearMat(Mat frontMat, Mat rearMat, Mat& out)
  {
@@ -309,7 +256,7 @@ Mat Panorama::front_process(Mat front, Mat rear)
         
         if(VIP7K)
 //            im1t = vx_Affine_RGB(im1, matrix);
-              im1t = cl_exc_affine(im1, matrix);
+              im1t = cl_exc_affine(im1, matrix, 0);
         else
             warpAffine(im1, im1t, matrix, WEIGHT_BIGSIZE, INTER_NEAREST);
 
@@ -356,9 +303,7 @@ Mat Panorama::rear_process(Mat front, Mat rear)
         cvtColor(rear, rear, CV_BGR2GRAY);
         
 		preImg = im1;
-
         rear_before = rear;
-
         
         init_cl_Affine(cl_affine_Ptr);
         cout << cl_affine_Ptr[0] << "ptr" << endl;
@@ -378,11 +323,10 @@ Mat Panorama::rear_process(Mat front, Mat rear)
             expand(front, im2);
         }
 
-		mergeRearMat(rear, im2);
-		cvtColor(rear, rear, CV_RGB2GRAY);
-
-        rear_now = rear;
+        rear_now.data = (uchar *)remap_gray_ptr[0];
+        
         clock_t b = clock();
+        
         if(DEBUG_MSG)
         cout<< "##### Merge pic time = " << static_cast<double>(b - a) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl;   
 
@@ -436,25 +380,15 @@ Mat Panorama::rear_process(Mat front, Mat rear)
          }
         
         matrix_back = matrix;
-         
-        if (0)
-		{
-			matrix_zero.at<double>(0, 2) = matrix.at<double>(0, 2);
-			matrix_zero.at<double>(1, 2) = matrix.at<double>(1, 2);
-        	matrix = matrix_zero;
-		}
 
         clock_t warp_st4 = clock();
         if(DEBUG_MSG)
         cout<< "##### Process_matrix time = " << static_cast<double>(warp_st4 - warp_st3) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl;   
 
-        if(DEBUG_MSG)
-        cout << "+++ Current speed is +++"<< abs( matrix.at<double>(1, 2)*0.25)*3.6 << "Km/h +++"<<endl;
-
         clock_t warp_st = clock();
         
         if(VIP7K)
-            im1t = cl_exc_affine(im1, matrix);
+            im1t = cl_exc_affine(im1, matrix, 1);
 
         else
             warpAffine(im1, im1t, matrix, WEIGHT_BIGSIZE, INTER_NEAREST);
@@ -465,15 +399,10 @@ Mat Panorama::rear_process(Mat front, Mat rear)
         cout<< "##### warpAffine time = " << static_cast<double>(warp_en - warp_st) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl;
 
         clock_t warp_st5= clock();
-        
-		ims.data = (uchar *)mix_image_rear(im1t, im2, alpha, alpha_1);
-
-        
 
         rear_before = rear_now.clone();
-		im1 = ims;
     
-        output.data = ims.data;
+        output.data = im1t.data;
         
         if(DEBUG_MSG_IMG)
             imwrite("debug/output.png",output);

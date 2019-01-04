@@ -15,7 +15,7 @@ using namespace cv;
 using namespace std;
 
 Mat cl_exc_remap(Mat input, Mat map_x, Mat map_y);
-Mat cl_exc_affine(Mat input,  Mat matrix);
+Mat cl_exc_affine(Mat input,  Mat matrix, bool Reversing);
 int init_cl_Affine(void * affinePtr[]);
 
 

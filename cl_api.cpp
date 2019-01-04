@@ -10,6 +10,7 @@
 
 static void *remap_ptr_table_f[Cmd_Que_Num];
 static void *remap_ptr_table_r[Cmd_Que_Num];
+void *remap_gray_ptr[1];
 
 #define Affine_W 320
 #define Affine_H 640
@@ -26,16 +27,15 @@ if (actual != 0) \
 
 typedef struct 
 {
-    cl_command_queue    CmdQue[2];
-    cl_kernel           imgKernel[2];
-    cl_program          program[2]; 
+    cl_command_queue    CmdQue[4];
+    cl_kernel           imgKernel[4];
+    cl_program          program[4]; 
     cl_mem              inputImgMap;     
     cl_mem              affine_matrix;
     cl_mem              outputImgMap;
     void*               mapPtr_in;
     void*               mapPtr_out;
     void*               affine_matrix_Ptr;
-    
 }CLaffineOBJ;
 
 
@@ -48,10 +48,12 @@ typedef struct
     cl_mem              inputImgMap_x;
     cl_mem              inputImgMap_y;
     cl_mem              outputImgMap;
+    cl_mem              outputGray;
     void*               mapPtr_in[Cmd_Que_Num];
     void*               mapPtr_out;
     void*               mapWriteImgPtr_x;
     void*               mapWriteImgPtr_y;
+    void*               mapGrayptr;
     
 }CLmemOBJ;
 
@@ -171,6 +173,8 @@ int init_cl_mem_obj(CLpltOBJ &pltobj, CLmemOBJ &memobj, Mat map_x, Mat map_y, vo
     CHECK_ERROR(status, "clCreateMapTable failed.");
     memobj.inputImgMap_y = clCreateBuffer(pltobj.context,CL_MEM_USE_HOST_PTR, data_size * sizeof(float),map_y.data,&status);
     CHECK_ERROR(status, "clCreateMapTable failed.");
+    memobj.outputGray = clCreateBuffer(pltobj.context,CL_MEM_WRITE_ONLY || CL_MEM_ALLOC_HOST_PTR, data_size * sizeof(uchar),NULL,&status);
+    CHECK_ERROR(status, "clCreateoutGray failed.");
 
     cl_image_format img_format;
     img_format.image_channel_data_type = CL_UNSIGNED_INT8;
@@ -220,10 +224,14 @@ int init_cl_mem_obj(CLpltOBJ &pltobj, CLmemOBJ &memobj, Mat map_x, Mat map_y, vo
         status |= clSetKernelArg(memobj.imgKernel[i], argIdx++, sizeof(cl_mem), &memobj.inputImgMap[i]);
         status |= clSetKernelArg(memobj.imgKernel[i], argIdx++, sizeof(cl_mem), &memobj.inputImgMap_x);
         status |= clSetKernelArg(memobj.imgKernel[i], argIdx++, sizeof(cl_mem), &memobj.inputImgMap_y);
+        status |= clSetKernelArg(memobj.imgKernel[i], argIdx++, sizeof(cl_mem), &memobj.outputGray);
     }
     clmemobj.mapPtr_out = clEnqueueMapImage( clmemobj.CmdQue[3], clmemobj.outputImgMap, CL_TRUE, CL_MAP_READ, 
-         imageOrigin, imageRegion,&imageRowPitch_in, NULL, 0, NULL, NULL, NULL); 
-    cout << " 5 " << endl;
+         imageOrigin, imageRegion,&imageRowPitch_in, NULL, 0, NULL, NULL, NULL);
+    clmemobj.mapGrayptr = clEnqueueMapBuffer( clmemobj.CmdQue[3], clmemobj.outputGray, CL_TRUE, CL_MAP_READ,
+        0, 180 * 260 * sizeof(uchar), 0, NULL, NULL, NULL);
+    remap_gray_ptr[0] = clmemobj.mapGrayptr;
+    
     return status;
 }
 extern "C" int gpu7k_get_viraddr(void* addrarray_f[], void* addrarray_r[], int size, int addr_cnt);
@@ -293,7 +301,8 @@ Mat cl_exc_remap(Mat input, Mat map_x, Mat map_y)
         }
     }    
     output.data = (uchar *)clmemobj.mapPtr_out;
-    output(Rect(0, 0, 260, 180)).copyTo(ROI);
+    ROI = output(Rect(0, 0, 260, 180));
+
     return ROI;
 }
 /************************************************************* cl warpAffine ******************************************************************************************/
@@ -318,13 +327,28 @@ int init_cl_affine_obj(CLpltOBJ &pltobj, CLaffineOBJ &memobj, void * ptr[])
     memobj.imgKernel[0] = clCreateKernel(memobj.program[0], "imageAffine", &status);
     CHECK_ERROR(status, "clCreateKernel failed.");
 
-
     memobj.CmdQue[1] = clCreateCommandQueue(pltobj.context, pltobj.devices[0], 0, &status);
     CHECK_ERROR(status, "clCreateCommamdQueue failed.");
     memobj.program[1] = clCreateProgramWithSource(pltobj.context, 1, &source, sourceSize, &status);
     status = clBuildProgram(memobj.program[1], 1, pltobj.devices, NULL, NULL, NULL);
     CHECK_ERROR(status, "clCreateProgarm failed.");
     memobj.imgKernel[1] = clCreateKernel(memobj.program[1], "imageCopy", &status);
+    CHECK_ERROR(status, "clCreateKernel failed.");
+
+    memobj.CmdQue[2] = clCreateCommandQueue(pltobj.context, pltobj.devices[0], 0, &status);
+    CHECK_ERROR(status, "clCreateCommamdQueue failed.");
+    memobj.program[2] = clCreateProgramWithSource(pltobj.context, 1, &source, sourceSize, &status);
+    status = clBuildProgram(memobj.program[2], 1, pltobj.devices, NULL, NULL, NULL);
+    CHECK_ERROR(status, "clCreateProgarm failed.");
+    memobj.imgKernel[2] = clCreateKernel(memobj.program[2], "imageMergef", &status);
+    CHECK_ERROR(status, "clCreateKernel failed.");
+
+    memobj.CmdQue[3] = clCreateCommandQueue(pltobj.context, pltobj.devices[0], 0, &status);
+    CHECK_ERROR(status, "clCreateCommamdQueue failed.");
+    memobj.program[3] = clCreateProgramWithSource(pltobj.context, 1, &source, sourceSize, &status);
+    status = clBuildProgram(memobj.program[3], 1, pltobj.devices, NULL, NULL, NULL);
+    CHECK_ERROR(status, "clCreateProgarm failed.");
+    memobj.imgKernel[3] = clCreateKernel(memobj.program[3], "imageMerger", &status);
     CHECK_ERROR(status, "clCreateKernel failed.");
 
     
@@ -384,6 +408,13 @@ int init_cl_affine_obj(CLpltOBJ &pltobj, CLaffineOBJ &memobj, void * ptr[])
     status |= clSetKernelArg(memobj.imgKernel[1], argIdx++, sizeof(cl_mem), &memobj.outputImgMap);
     status |= clSetKernelArg(memobj.imgKernel[1], argIdx++, sizeof(cl_mem), &memobj.inputImgMap);
 
+    argIdx = 0;
+    status |= clSetKernelArg(memobj.imgKernel[2], argIdx++, sizeof(cl_mem), &clmemobj.outputImgMap);
+    status |= clSetKernelArg(memobj.imgKernel[2], argIdx++, sizeof(cl_mem), &memobj.inputImgMap);
+    argIdx = 0;
+    status |= clSetKernelArg(memobj.imgKernel[3], argIdx++, sizeof(cl_mem), &clmemobj.outputImgMap);
+    status |= clSetKernelArg(memobj.imgKernel[3], argIdx++, sizeof(cl_mem), &memobj.inputImgMap);
+
     
     return status;
 }
@@ -395,7 +426,7 @@ int init_cl_Affine(void * affinePtr[])
 
 
 
-Mat cl_exc_affine(Mat input,  Mat matrix)
+Mat cl_exc_affine(Mat input,  Mat matrix, bool Reversing)
 {
 
     double _rotate[2][2] = {
@@ -416,6 +447,7 @@ Mat cl_exc_affine(Mat input,  Mat matrix)
     static bool init = 1;
 
     static Mat output = Mat::zeros(input.size(), CV_8UC4);
+
     memcpy(affineobj.affine_matrix_Ptr, mat, sizeof(float)*6);
 
     cl_event ndrEvt;
@@ -425,8 +457,22 @@ Mat cl_exc_affine(Mat input,  Mat matrix)
 
     status = clEnqueueNDRangeKernel(affineobj.CmdQue[1], affineobj.imgKernel[1], 2, NULL,
             globaworksize, NULL, 0, NULL, &ndrEvt);
+    static size_t   globaworksize_1[2];
+    globaworksize_1[0] = 260;
+    globaworksize_1[1] = 180;
 
+    if(!Reversing)
+    {
+        status = clEnqueueNDRangeKernel(affineobj.CmdQue[2], affineobj.imgKernel[2], 2, NULL,
+            globaworksize_1, NULL, 0, NULL, &ndrEvt);
+    }else
+    {
+        status = clEnqueueNDRangeKernel(affineobj.CmdQue[3], affineobj.imgKernel[3], 2, NULL,
+            globaworksize_1, NULL, 0, NULL, &ndrEvt);        
+    }
+//    clFinish(affineobj.CmdQue[3]);
     output.data = (uchar *)affineobj.mapPtr_out;
+    
     return output;
 }
 

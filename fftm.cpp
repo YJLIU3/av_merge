@@ -522,29 +522,23 @@ static void divSpectrums( InputArray _srcA, InputArray _srcB, OutputArray _dst, 
 Point2d phaseCorrelateRes(InputArray _src1, InputArray _src2, InputArray _window , double* response)
 {
     static Mat OLD_FFT;
-    //分别得到两幅输入图像和窗函数的矩阵形式
     Mat src1 = _src1.getMat();
     Mat src2 = _src2.getMat();
     Mat window = _window.getMat();
-    //输入图像的类型和大小的判断，必须一致，而且类型必须是32位或64位浮点灰度图像
     CV_Assert( src1.type() == src2.type());
     CV_Assert( src1.type() == CV_32FC1 || src1.type() == CV_64FC1 );
     CV_Assert( src1.size == src2.size);
-    //如果使用窗函数，则窗函数的大小和类型必须与输入图像的一致
     if(!window.empty())
     {
         CV_Assert( src1.type() == window.type());
         CV_Assert( src1.size == window.size);
     }
-    //因为要进行离散傅立叶变换，所以为了提高效率，就要得到最佳的图像尺寸
     int M = getOptimalDFTSize(src1.rows);
     int N = getOptimalDFTSize(src1.cols);
  
     Mat padded1, padded2, paddedWin;
-    //生成尺寸修改以后的矩阵
-    if(M != src1.rows || N != src1.cols)   //最佳尺寸不是原图像的尺寸
+    if(M != src1.rows || N != src1.cols)
     {
-        //通过补零的方式填充多出来的像素
         copyMakeBorder(src1, padded1, 0, M - src1.rows, 0, N - src1.cols, BORDER_CONSTANT, Scalar::all(0));
         copyMakeBorder(src2, padded2, 0, M - src2.rows, 0, N - src2.cols, BORDER_CONSTANT, Scalar::all(0));
  
@@ -553,7 +547,7 @@ Point2d phaseCorrelateRes(InputArray _src1, InputArray _src2, InputArray _window
             copyMakeBorder(window, paddedWin, 0, M - window.rows, 0, N - window.cols, BORDER_CONSTANT, Scalar::all(0));
         }
     }
-    else    //最佳尺寸与原图像的尺寸一致
+    else
     {
         padded1 = src1;
         padded2 = src2;
@@ -562,18 +556,12 @@ Point2d phaseCorrelateRes(InputArray _src1, InputArray _src2, InputArray _window
  
     Mat FFT1, FFT2, P, Pm, C;
  
-    // perform window multiplication if available
-    //执行步骤1，两幅输入图像分别与窗函数逐点相乘
     if(!paddedWin.empty())
     {
         // apply window to both images before proceeding...
         multiply(paddedWin, padded1, padded1);
         multiply(paddedWin, padded2, padded2);
     }
- 
-    // execute phase correlation equation
-    // Reference: http://en.wikipedia.org/wiki/Phase_correlation
-    //执行步骤2，分别对两幅图像取傅立叶变换
     static bool fir_fps = 1;
     if(fir_fps)
     {
@@ -586,38 +574,24 @@ Point2d phaseCorrelateRes(InputArray _src1, InputArray _src2, InputArray _window
         dft(padded2, FFT2, DFT_REAL_OUTPUT);
         FFT1 = OLD_FFT;
     }
-    //执行步骤3
-    //计算互功率谱的分子部分，即公式3中的分子，其中P为输出结果，true表示的是对FF2取共轭，所以得到的结果为：P=FFT1×FFT2*，mulSpectrums函数为通用函数
+   
     mulSpectrums(FFT1, FFT2, P, 0, true);
-    //计算互功率谱的分母部分，即公式3中的分母，结果为：Pm=|P|，magSpectrums函数就是在phasecorr.cpp文件内给出的，它的作用是对复数取模。
+
     magSpectrums(P, Pm);
-    //计算互功率谱，即公式3，结果为：C=P / Pm，divSpectrums函数也是在phasecorr.cpp文件内给出的，它仿照mulSpectrums函数的写法，其中参数false表示不取共轭
+
     divSpectrums(P, Pm, C, 0, false); // FF* / |FF*| (phase correlation equation completed here...)
-    //执行步骤4，傅立叶逆变换
-    idft(C, C); // gives us the nice peak shift location...
-    /*平移处理，fftShift函数也是在phasecorr.cpp文件内给出的，它的作用是把图像平均分割成——左上、左下、右上、右下，把左上和右下对调，把右上和左下对调。它的目的是把能量调整到图像的中心，也就是图像的中心对应于两幅图像相频差为零的地方，即没有发生位移的地方。*/
-    fftShift(C); // shift the energy to the center of the frame.
+
+    idft(C, C);
+    fftShift(C);
     OLD_FFT = FFT2;
-    //执行步骤5
-    // locate the highest peak
-    //找到最大点处的像素位置，minMaxLoc为通用函数
     Point peakLoc;
     minMaxLoc(C, NULL, NULL, NULL, &peakLoc);
- 
-    // get the phase shift with sub-pixel accuracy, 5x5 window seems about right here...
-    //在5×5的窗体内确定亚像素精度的坐标位置
     Point2d t;
-    // weightedCentroid也是在phasecorr.cpp文件内给出的，它是利用公式4来计算更精确的坐标位置
     t = weightedCentroid(C, peakLoc, Size(5, 5), response);
  
-    // max response is M*N (not exactly, might be slightly larger due to rounding errors)
-    //求最大响应值
     if(response)
         *response /= M*N;
  
-    // adjust shift relative to image center...
-    //最终确定位移量
-    //先找到图像中点，然后用中点减去由步骤5得到的坐标位置
     Point2d center((double)padded1.cols / 2.0, (double)padded1.rows / 2.0);
  
     return (center - t);
@@ -628,7 +602,6 @@ Point2d phaseCorrelateRes(InputArray _src1, InputArray _src2, InputArray _window
 Mat test_LogPolarFFTTemplateMatch(Mat im0, Mat im1, double canny_threshold1, double canny_threshold2, int idx)
 {
     if(VIP7K)
-//        im1 = vx_Canny(im1, canny_threshold1, canny_threshold2);
         threshold(im1, im1, 100, 200, CV_THRESH_BINARY);
     else
         Canny(im1, im1, canny_threshold2, canny_threshold1, 3, 1);
@@ -639,7 +612,7 @@ Mat test_LogPolarFFTTemplateMatch(Mat im0, Mat im1, double canny_threshold1, dou
 
     Mat im1_ROI = im1(Rect(2,26,256,128));
 	Mat im0_ROI = im0(Rect(2,26,256,128));
-    
+
     Point2d tr = phaseCorrelateRes(im1_ROI, im0_ROI);
 
     clock_t mat_st = clock();
