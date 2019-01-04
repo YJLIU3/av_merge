@@ -9,7 +9,7 @@
 #include "cl_api.h"
 
 static Mat front_before;
-static Mat front_now;
+static Mat front_now = Mat::zeros(image_size, CV_8UC1);
 static Mat rear_before;
 static Mat rear_now = Mat::zeros(image_size, CV_8UC1);
 static Mat matrix_bypast[25];
@@ -112,7 +112,7 @@ Mat compute_alpha(Mat mask1, Mat mask2, Mat time1, Mat time2, float timeRatioThr
 void mix_image_front(Mat image1, Mat image2, Mat alpha, Mat alpha_1, Mat& output)
 {
 #if 1	
-    memcpy(image1.data, image2.data, sizeof(char)* 4 * 180*320);
+    memcpy((cl_affine_Ptr[0]), (image2.data ), sizeof(char)* 4 * 180*320);
 
 	output = image1;
 #endif
@@ -153,9 +153,6 @@ Mat Panorama::front_process(Mat front, Mat rear)
 		expand(front, im1);
 		mergeFrontMat(front, im1);
 
-		imMask1 = weight.clone();
-		create_timeImg_from_mask(imMask1, imTime1, 1);
-
 		cvtColor(front, front, CV_RGB2GRAY);
         
 		preImg = im1;
@@ -164,6 +161,7 @@ Mat Panorama::front_process(Mat front, Mat rear)
 		output = im1;
         
         init_cl_Affine(cl_affine_Ptr);
+        memcpy(cl_affine_Ptr[0], im1.data, im1.cols * im1.rows * 4 * sizeof(char));
 	}
 	else
 	{
@@ -178,17 +176,11 @@ Mat Panorama::front_process(Mat front, Mat rear)
             expand(front, im2);
         }
 
-
-		mergeFrontMat(front, im2);
-
-        cvtColor(front, front, CV_RGB2GRAY);
-//		cvtColor(rear, rear, CV_RGB2GRAY);
-
-        front_now = front;
-//        rear_now = rear;
+        front_now.data = (uchar *)remap_gray_ptr[0];
+        
         clock_t b = clock();
         if(DEBUG_MSG)
-        cout<< "Before matrix Running time  is: " << static_cast<double>(b - a) / CLOCKS_PER_SEC * 1000 << "ms" << endl;   
+        cout<< "##### Merge pic time = " << static_cast<double>(b - a) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl;
 
         clock_t warp_st1 = clock();
         Mat matrix;
@@ -196,7 +188,7 @@ Mat Panorama::front_process(Mat front, Mat rear)
         if(!VIP7K)
             matrix = vx_LogPolarFFTTemplateMatch(front_before, front_now, 200, 100, idx);
         else
- 		    matrix = LogPolarFFTTemplateMatch(front_before, front_now, 200, 100, idx);
+ 		    matrix = test_LogPolarFFTTemplateMatch(front_before, front_now, 200, 100, idx);
         clock_t warp_st2 = clock();
         if(DEBUG_MSG)
         cout<< "Compute_matrix Running time  is: " << static_cast<double>(warp_st2 - warp_st1) / CLOCKS_PER_SEC * 1000 << "ms" << endl;   
@@ -235,27 +227,15 @@ Mat Panorama::front_process(Mat front, Mat rear)
          }
         
         matrix_back = matrix;
-         
-        if (1)
-		{
-			matrix_zero.at<double>(0, 2) = matrix.at<double>(0, 2);
-			matrix_zero.at<double>(1, 2) = matrix.at<double>(1, 2);
-            if(DEBUG_MSG)
-                cout << "*****************" << matrix.at<double>(0, 2)/matrix.at<double>(1, 2) << endl;
-			matrix = matrix_zero;
-		}
+
 
         clock_t warp_st4 = clock();
         if(DEBUG_MSG)
         cout<< "Process_matrix Running time  is: " << static_cast<double>(warp_st4 - warp_st3) / CLOCKS_PER_SEC * 1000 << "ms" << endl;   
 
-        if(DEBUG_MSG){
-        cout << "+++++++++++++Current speed is++++++++++"<< abs( matrix.at<double>(1, 2)*0.25)*3.6 << "Km/h"<<endl;
-        }
         clock_t warp_st = clock();
         
         if(VIP7K)
-//            im1t = vx_Affine_RGB(im1, matrix);
               im1t = cl_exc_affine(im1, matrix, 0);
         else
             warpAffine(im1, im1t, matrix, WEIGHT_BIGSIZE, INTER_NEAREST);
@@ -266,17 +246,11 @@ Mat Panorama::front_process(Mat front, Mat rear)
         cout<< "warpAffine Running time  is: " << static_cast<double>(warp_en - warp_st) / CLOCKS_PER_SEC * 1000 << "ms" << endl;   
 
         clock_t warp_st5= clock();
-
-
-		mix_image_front(im1t, im2, alpha, alpha_1, ims);
-
-       
+ 
+		front_before = front_now.clone();
         
-		front_before = front_now;
-        
-		im1 = ims;
 
-        output = ims.clone();
+        output.data = im1t.data;
         if(DEBUG_MSG_IMG)
             imwrite("debug/output.png",output);
 

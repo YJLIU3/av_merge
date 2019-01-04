@@ -191,10 +191,10 @@ Mat av_merge(Mat front_image, Mat rear_image, bool Reversing)
     if(!Reversing)
     {
         clock_t end_remap = clock();
-        if(!VIP7K)
-            rear_trs = cl_exc_remap(rear_image, Map_Rx, Map_Ry);
+        if(VIP7K)
+            front_trs = cl_exc_remap(front_image, Map_Rx, Map_Ry);
         else
-            remap(rear_image, rear_trs, Map_Rx, Map_Ry, INTER_NEAREST, BORDER_CONSTANT);
+            remap(front_image, front_trs, Map_Rx, Map_Ry, INTER_NEAREST, BORDER_CONSTANT);
 
         if(front_trs.size() != image_size)
     	{
@@ -203,7 +203,7 @@ Mat av_merge(Mat front_image, Mat rear_image, bool Reversing)
     		resize(front_trs, front_trs, image_size);
     		resize(rear_trs, rear_trs, image_size);
     	}
-        
+        imwrite("debug/front_trs.jpg", front_trs);
         clock_t end_process = clock();
         if(!DEBUG_MSG)
             cout<< "###### front process Running time  is: " << static_cast<double>(end_process - end_remap) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl;

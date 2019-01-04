@@ -220,18 +220,17 @@ int init_cl_mem_obj(CLpltOBJ &pltobj, CLmemOBJ &memobj, Mat map_x, Mat map_y, vo
     for(int i = 0; i < Cmd_Que_Num; i++)
     {
         int argIdx = 0;
-        status |= clSetKernelArg(memobj.imgKernel[i], argIdx++, sizeof(cl_mem), &memobj.outputImgMap);
+        status |= clSetKernelArg(memobj.imgKernel[i], argIdx++, sizeof(cl_mem), &clmemobj.outputImgMap);
         status |= clSetKernelArg(memobj.imgKernel[i], argIdx++, sizeof(cl_mem), &memobj.inputImgMap[i]);
         status |= clSetKernelArg(memobj.imgKernel[i], argIdx++, sizeof(cl_mem), &memobj.inputImgMap_x);
         status |= clSetKernelArg(memobj.imgKernel[i], argIdx++, sizeof(cl_mem), &memobj.inputImgMap_y);
-        status |= clSetKernelArg(memobj.imgKernel[i], argIdx++, sizeof(cl_mem), &memobj.outputGray);
+        status |= clSetKernelArg(memobj.imgKernel[i], argIdx++, sizeof(cl_mem), &clmemobj.outputGray);
     }
     clmemobj.mapPtr_out = clEnqueueMapImage( clmemobj.CmdQue[3], clmemobj.outputImgMap, CL_TRUE, CL_MAP_READ, 
          imageOrigin, imageRegion,&imageRowPitch_in, NULL, 0, NULL, NULL, NULL);
     clmemobj.mapGrayptr = clEnqueueMapBuffer( clmemobj.CmdQue[3], clmemobj.outputGray, CL_TRUE, CL_MAP_READ,
         0, 180 * 260 * sizeof(uchar), 0, NULL, NULL, NULL);
     remap_gray_ptr[0] = clmemobj.mapGrayptr;
-    
     return status;
 }
 extern "C" int gpu7k_get_viraddr(void* addrarray_f[], void* addrarray_r[], int size, int addr_cnt);
@@ -302,7 +301,6 @@ Mat cl_exc_remap(Mat input, Mat map_x, Mat map_y)
     }    
     output.data = (uchar *)clmemobj.mapPtr_out;
     ROI = output(Rect(0, 0, 260, 180));
-
     return ROI;
 }
 /************************************************************* cl warpAffine ******************************************************************************************/
