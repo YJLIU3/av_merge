@@ -1,7 +1,7 @@
 #include "opencv2/core.hpp"
 #include "opencv2/opencv.hpp"
 #include "parameter.h"
-
+#include "cv_vx.h"
 #include <VX/vx.h>
 #include <VX/vxu.h>
 #include <VX/vx_api.h>
@@ -44,59 +44,7 @@ Mat LogPolarFFTTemplateMatch(Mat im0, Mat im1, double canny_threshold1, double c
 /****************************************************************************************/
 /******************************** OPENVX_PHASECORRECT ************************************/
 /****************************************************************************************/
-
-static vx_status  status = VX_SUCCESS;
-static vx_context context = NULL;
-
-typedef struct{
-    float real;
-    float image;
-}complex_fft;
-
-static vx_uint32 vxcGetTypeSize(vx_enum format)
-{
-    switch(format)
-    {
-    case VX_TYPE_INT8:
-    case VX_TYPE_UINT8:
-        return 1;
-    case VX_TYPE_INT16:
-    case VX_TYPE_UINT16:
-        return 2;
-    case VX_TYPE_INT32:
-    case VX_TYPE_UINT32:
-        return 4;
-    case VX_TYPE_INT64:
-    case VX_TYPE_UINT64:
-        return 8;
-    case VX_TYPE_FLOAT32:
-        return 4;
-    case VX_TYPE_FLOAT64:
-        return 8;
-    case VX_TYPE_ENUM:
-        return 4;
-    case VX_TYPE_FLOAT16:
-        return 2;
-    }
-
-    return 4;
-}
-
-static int calculate_M(int len)
-{
-    int i;
-    int k;
-
-    i = 0;
-    k = 1;
-    while(k < len)
-    {
-        k = k*2;
-        i++;
-    }
-
-    return i;
-}
+Point2d phaseCorrelateRes(InputArray _src1, InputArray _src2, InputArray _window = noArray(), double* response = 0);
 
 static Point2d weightedCentroid(InputArray _src, cv::Point peakLocation, cv::Size weightBoxSize, double* response)
 {
@@ -178,6 +126,122 @@ static Point2d weightedCentroid(InputArray _src, cv::Point peakLocation, cv::Siz
     return centroid;
 }
 
+static void magSpectrums( InputArray _src, OutputArray _dst)
+{
+    Mat src = _src.getMat();
+    int depth = src.depth(), cn = src.channels(), type = src.type();
+    int rows = src.rows, cols = src.cols;
+    int j, k;
+
+    CV_Assert( type == CV_32FC1 || type == CV_32FC2 || type == CV_64FC1 || type == CV_64FC2 );
+
+    if(src.depth() == CV_32F)
+        _dst.create( src.rows, src.cols, CV_32FC1 );
+    else
+        _dst.create( src.rows, src.cols, CV_64FC1 );
+
+    Mat dst = _dst.getMat();
+    dst.setTo(0);//Mat elements are not equal to zero by default!
+
+    bool is_1d = (rows == 1 || (cols == 1 && src.isContinuous() && dst.isContinuous()));
+
+    if( is_1d )
+        cols = cols + rows - 1, rows = 1;
+
+    int ncols = cols*cn;
+    int j0 = cn == 1;
+    int j1 = ncols - (cols % 2 == 0 && cn == 1);
+
+    if( depth == CV_32F )
+    {
+        const float* dataSrc = src.ptr<float>();
+        float* dataDst = dst.ptr<float>();
+
+        size_t stepSrc = src.step/sizeof(dataSrc[0]);
+        size_t stepDst = dst.step/sizeof(dataDst[0]);
+
+        if( !is_1d && cn == 1 )
+        {
+            for( k = 0; k < (cols % 2 ? 1 : 2); k++ )
+            {
+                if( k == 1 )
+                    dataSrc += cols - 1, dataDst += cols - 1;
+                dataDst[0] = dataSrc[0]*dataSrc[0];
+                if( rows % 2 == 0 )
+                    dataDst[(rows-1)*stepDst] = dataSrc[(rows-1)*stepSrc]*dataSrc[(rows-1)*stepSrc];
+
+                for( j = 1; j <= rows - 2; j += 2 )
+                {
+                    dataDst[j*stepDst] = (float)std::sqrt((double)dataSrc[j*stepSrc]*dataSrc[j*stepSrc] +
+                                                          (double)dataSrc[(j+1)*stepSrc]*dataSrc[(j+1)*stepSrc]);
+                }
+
+                if( k == 1 )
+                    dataSrc -= cols - 1, dataDst -= cols - 1;
+            }
+        }
+
+        for( ; rows--; dataSrc += stepSrc, dataDst += stepDst )
+        {
+            if( is_1d && cn == 1 )
+            {
+                dataDst[0] = dataSrc[0]*dataSrc[0];
+                if( cols % 2 == 0 )
+                    dataDst[j1] = dataSrc[j1]*dataSrc[j1];
+            }
+
+            for( j = j0; j < j1; j += 2 )
+            {
+                dataDst[j] = (float)std::sqrt((double)dataSrc[j]*dataSrc[j] + (double)dataSrc[j+1]*dataSrc[j+1]);
+            }
+        }
+    }
+    else
+    {
+        const double* dataSrc = src.ptr<double>();
+        double* dataDst = dst.ptr<double>();
+
+        size_t stepSrc = src.step/sizeof(dataSrc[0]);
+        size_t stepDst = dst.step/sizeof(dataDst[0]);
+
+        if( !is_1d && cn == 1 )
+        {
+            for( k = 0; k < (cols % 2 ? 1 : 2); k++ )
+            {
+                if( k == 1 )
+                    dataSrc += cols - 1, dataDst += cols - 1;
+                dataDst[0] = dataSrc[0]*dataSrc[0];
+                if( rows % 2 == 0 )
+                    dataDst[(rows-1)*stepDst] = dataSrc[(rows-1)*stepSrc]*dataSrc[(rows-1)*stepSrc];
+
+                for( j = 1; j <= rows - 2; j += 2 )
+                {
+                    dataDst[j*stepDst] = std::sqrt(dataSrc[j*stepSrc]*dataSrc[j*stepSrc] +
+                                                   dataSrc[(j+1)*stepSrc]*dataSrc[(j+1)*stepSrc]);
+                }
+
+                if( k == 1 )
+                    dataSrc -= cols - 1, dataDst -= cols - 1;
+            }
+        }
+
+        for( ; rows--; dataSrc += stepSrc, dataDst += stepDst )
+        {
+            if( is_1d && cn == 1 )
+            {
+                dataDst[0] = dataSrc[0]*dataSrc[0];
+                if( cols % 2 == 0 )
+                    dataDst[j1] = dataSrc[j1]*dataSrc[j1];
+            }
+
+            for( j = j0; j < j1; j += 2 )
+            {
+                dataDst[j] = std::sqrt(dataSrc[j]*dataSrc[j] + dataSrc[j+1]*dataSrc[j+1]);
+            }
+        }
+    }
+}
+
 static void fftShift(InputOutputArray _out)
 {
     Mat out = _out.getMat();
@@ -255,579 +319,331 @@ static void fftShift(InputOutputArray _out)
     merge(planes, out);
 }
 
-typedef struct 
+static void divSpectrums( InputArray _srcA, InputArray _srcB, OutputArray _dst, int flags, bool conjB)
 {
-	vx_graph	graph[2];
-	vx_node		node[5];
-	vx_kernel	kernel[5];
-	vx_border_t border;
-	unsigned long	nGraphIdx;
-	int			m;
-	int			n;
-	vx_scalar			mLen;
-	vx_scalar			nLen;
-	vx_scalar			nAligned;
-	vx_scalar			mAligned;
-	int			height;
-	int			width;
-    vx_image    imageIn;
-	vx_array	arrayTmp;
-	vx_array   	arrayIn;
-	vx_array	arrayOut;
-	vx_array   arrayFftOut;
-	vx_array   arrayPreFftOut;
-	vx_array   arraymagOut;
-    vx_array   arrayFftHorOut;
-    vx_array   arrayIfftHorOut;
-    vx_array   arrayIfftOut;
-    vx_array   ifftImgOut;
-	void * 		mapPtrOut;
-	void * 		mapPtrIn;
-	void*      mapPtr          = NULL;
-    void*      mapPtr_ir          = NULL;
-    void*      mapPtr_ii          = NULL;
-    vx_scalar   offsetX_s    = NULL;
-    vx_scalar   offsetY_s    = NULL;
+    Mat srcA = _srcA.getMat(), srcB = _srcB.getMat();
+    int depth = srcA.depth(), cn = srcA.channels(), type = srcA.type();
+    int rows = srcA.rows, cols = srcA.cols;
+    int j, k;
 
-}VXFFTOBJS;
+    CV_Assert( type == srcB.type() && srcA.size() == srcB.size() );
+    CV_Assert( type == CV_32FC1 || type == CV_32FC2 || type == CV_64FC1 || type == CV_64FC2 );
 
-vx_status vxcFFTHorLayer(VXFFTOBJS fftobj, vx_image input, vx_array imgIn, vx_array output, int nLen, int n, int mLen, int m, int offsetX, int offsetY)
-{
-	vx_int32    index        = 0;
-    vx_border_t border;
-    vx_enum     dataFormat = VX_TYPE_FLOAT32;
+    _dst.create( srcA.rows, srcA.cols, type );
+    Mat dst = _dst.getMat();
 
-    border.constant_value.U8 = 0;
-    border.mode = VX_BORDER_CONSTANT;
+    CV_Assert(dst.data != srcA.data); // non-inplace check
+    CV_Assert(dst.data != srcB.data); // non-inplace check
 
-    if (dataFormat == VX_TYPE_FLOAT16)
+    bool is_1d = (flags & DFT_ROWS) || (rows == 1 || (cols == 1 &&
+             srcA.isContinuous() && srcB.isContinuous() && dst.isContinuous()));
+
+    if( is_1d && !(flags & DFT_ROWS) )
+        cols = cols + rows - 1, rows = 1;
+
+    int ncols = cols*cn;
+    int j0 = cn == 1;
+    int j1 = ncols - (cols % 2 == 0 && cn == 1);
+
+    if( depth == CV_32F )
     {
-        border.constant_value.U16 = 0;
-    }
-    else if (dataFormat == VX_TYPE_UINT8)
-    {
-        border.constant_value.U8 = 0;
-    }
+        const float* dataA = srcA.ptr<float>();
+        const float* dataB = srcB.ptr<float>();
+        float* dataC = dst.ptr<float>();
+        float eps = FLT_EPSILON; // prevent div0 problems
 
-    status        = vxLoadKernels(context, "fft");
+        size_t stepA = srcA.step/sizeof(dataA[0]);
+        size_t stepB = srcB.step/sizeof(dataB[0]);
+        size_t stepC = dst.step/sizeof(dataC[0]);
 
-    if(VX_SUCCESS == status)
-    {
-        char * pKernelName = NULL;
-
-
-		switch(dataFormat)
-		{
-		case VX_TYPE_UINT8:
-			pKernelName = "com.vivantecorp.extension.rnn_uint8";
-			break;
-		case VX_TYPE_FLOAT32:
-			pKernelName = "com.vivantecorp.extension.fft_h_256x128";
-			break;
-		case VX_TYPE_FLOAT16:
-		default:
-			return -4;
-		}
-        if(fftobj.kernel[0] = vxGetKernelByName(context, pKernelName))// match with VXC code
+        if( !is_1d && cn == 1 )
         {
-			status |= vxGetStatus((vx_reference)fftobj.kernel[0] );
-
-            if(fftobj.node[0] = vxCreateGenericNode(fftobj.graph[fftobj.nGraphIdx&0x01], fftobj.kernel[0]))
+            for( k = 0; k < (cols % 2 ? 1 : 2); k++ )
             {
-				status |= vxGetStatus((vx_reference)fftobj.node[0] );
+                if( k == 1 )
+                    dataA += cols - 1, dataB += cols - 1, dataC += cols - 1;
+                dataC[0] = dataA[0] / (dataB[0] + eps);
+                if( rows % 2 == 0 )
+                    dataC[(rows-1)*stepC] = dataA[(rows-1)*stepA] / (dataB[(rows-1)*stepB] + eps);
+                if( !conjB )
+                    for( j = 1; j <= rows - 2; j += 2 )
+                    {
+                        double denom = (double)dataB[j*stepB]*dataB[j*stepB] +
+                                       (double)dataB[(j+1)*stepB]*dataB[(j+1)*stepB] + (double)eps;
 
-                status |= vxSetParameterByIndex(fftobj.node[0], index++, (vx_reference)input);
-                status |= vxSetParameterByIndex(fftobj.node[0], index++, (vx_reference)imgIn);
-                status |= vxSetParameterByIndex(fftobj.node[0], index++, (vx_reference)output);
-                status |= vxSetParameterByIndex(fftobj.node[0], index++, (vx_reference)fftobj.nLen);	//(vx_reference)nLen_s);
-                status |= vxSetParameterByIndex(fftobj.node[0], index++, (vx_reference)fftobj.nAligned);//(vx_reference)n_s);
-                status |= vxSetParameterByIndex(fftobj.node[0], index++, (vx_reference)fftobj.mLen);	//(vx_reference)mLen_s);
-                status |= vxSetParameterByIndex(fftobj.node[0], index++, (vx_reference)fftobj.mAligned);//(vx_reference)m_s);
-                status |= vxSetParameterByIndex(fftobj.node[0], index++, (vx_reference)fftobj.offsetX_s);
-                status |= vxSetParameterByIndex(fftobj.node[0], index++, (vx_reference)fftobj.offsetY_s);
-                
-                status |= vxSetNodeAttribute(fftobj.node[0], VX_NODE_BORDER, &border, sizeof(border));
+                        double re = (double)dataA[j*stepA]*dataB[j*stepB] +
+                                    (double)dataA[(j+1)*stepA]*dataB[(j+1)*stepB];
 
-                if(status != VX_SUCCESS)
-                {
-                    status = VX_ERROR_INVALID_PARAMETERS;
-                    vxReleaseNode(&fftobj.node[0]);
-                    vxReleaseKernel(&fftobj.kernel[0]);
-                    return status;
-                }
-            }
-            else
-            {
-                vxReleaseKernel(&fftobj.kernel[0]);
-                return status;
+                        double im = (double)dataA[(j+1)*stepA]*dataB[j*stepB] -
+                                    (double)dataA[j*stepA]*dataB[(j+1)*stepB];
+
+                        dataC[j*stepC] = (float)(re / denom);
+                        dataC[(j+1)*stepC] = (float)(im / denom);
+                    }
+                else
+                    for( j = 1; j <= rows - 2; j += 2 )
+                    {
+
+                        double denom = (double)dataB[j*stepB]*dataB[j*stepB] +
+                                       (double)dataB[(j+1)*stepB]*dataB[(j+1)*stepB] + (double)eps;
+
+                        double re = (double)dataA[j*stepA]*dataB[j*stepB] -
+                                    (double)dataA[(j+1)*stepA]*dataB[(j+1)*stepB];
+
+                        double im = (double)dataA[(j+1)*stepA]*dataB[j*stepB] +
+                                    (double)dataA[j*stepA]*dataB[(j+1)*stepB];
+
+                        dataC[j*stepC] = (float)(re / denom);
+                        dataC[(j+1)*stepC] = (float)(im / denom);
+                    }
+                if( k == 1 )
+                    dataA -= cols - 1, dataB -= cols - 1, dataC -= cols - 1;
             }
         }
-    }
-    return status;
-}
 
-vx_status vxcFFTVerLayer(VXFFTOBJS fftobj, vx_array input, vx_array output, int nLen, int n, int mLen, int m)
-{
-	vx_int32    index        = 0;
-    vx_uint32   input_ZP   = 0;
-    vx_border_t border;
-    vx_enum     dataFormat = VX_TYPE_FLOAT32;
-
-    border.constant_value.U8 = 0;
-    border.mode = VX_BORDER_CONSTANT;
-
-    if (dataFormat == VX_TYPE_FLOAT16)
-    {
-        border.constant_value.U16 = 0;
-    }
-    else if (dataFormat == VX_TYPE_UINT8)
-    {
-        border.constant_value.U8 = input_ZP;
-    }
-
-    status        = vxLoadKernels(context, "fft");
-    if(VX_SUCCESS == status)
-    {
-		char * pKernelName = NULL;
-
-
-		switch(dataFormat)
-		{
-		case VX_TYPE_UINT8:
-			pKernelName = "com.vivantecorp.extension.rnn_uint8";
-			break;
-		case VX_TYPE_FLOAT32:
-			pKernelName = "com.vivantecorp.extension.fft_v_256x128";
-			break;
-		case VX_TYPE_FLOAT16:
-		default:
-			return -4;
-		}		
-        if(fftobj.kernel[1] = vxGetKernelByName(context, pKernelName))// match with VXC code
+        for( ; rows--; dataA += stepA, dataB += stepB, dataC += stepC )
         {
-            if(fftobj.node[1] = vxCreateGenericNode(fftobj.graph[fftobj.nGraphIdx&0x01], fftobj.kernel[1]))
+            if( is_1d && cn == 1 )
             {
-                status |= vxSetParameterByIndex(fftobj.node[1], index++, (vx_reference)input);
-                status |= vxSetParameterByIndex(fftobj.node[1], index++, (vx_reference)output);
-                status |= vxSetParameterByIndex(fftobj.node[1], index++,(vx_reference)fftobj.nLen); //(vx_reference)nLen_s);
-                status |= vxSetParameterByIndex(fftobj.node[1], index++,(vx_reference)fftobj.nAligned); //(vx_reference)n_s);
-                status |= vxSetParameterByIndex(fftobj.node[1], index++,(vx_reference)fftobj.mLen); //(vx_reference)mLen_s);
-                status |= vxSetParameterByIndex(fftobj.node[1], index++,(vx_reference)fftobj.mAligned); //(vx_reference)m_s);
+                dataC[0] = dataA[0] / (dataB[0] + eps);
+                if( cols % 2 == 0 )
+                    dataC[j1] = dataA[j1] / (dataB[j1] + eps);
+            }
 
-                status |= vxSetNodeAttribute(fftobj.node[1], VX_NODE_BORDER, &border, sizeof(border));
-
-                if(status != VX_SUCCESS)
+            if( !conjB )
+                for( j = j0; j < j1; j += 2 )
                 {
-                    status = VX_ERROR_INVALID_PARAMETERS;
-                    vxReleaseNode(&fftobj.node[1]);
-                    vxReleaseKernel(&fftobj.kernel[1]);
-                    return status;
+                    double denom = (double)(dataB[j]*dataB[j] + dataB[j+1]*dataB[j+1] + eps);
+                    double re = (double)(dataA[j]*dataB[j] + dataA[j+1]*dataB[j+1]);
+                    double im = (double)(dataA[j+1]*dataB[j] - dataA[j]*dataB[j+1]);
+                    dataC[j] = (float)(re / denom);
+                    dataC[j+1] = (float)(im / denom);
                 }
-            }
             else
+                for( j = j0; j < j1; j += 2 )
+                {
+                    double denom = (double)(dataB[j]*dataB[j] + dataB[j+1]*dataB[j+1] + eps);
+                    double re = (double)(dataA[j]*dataB[j] - dataA[j+1]*dataB[j+1]);
+                    double im = (double)(dataA[j+1]*dataB[j] + dataA[j]*dataB[j+1]);
+                    dataC[j] = (float)(re / denom);
+                    dataC[j+1] = (float)(im / denom);
+                }
+        }
+    }
+    else
+    {
+        const double* dataA = srcA.ptr<double>();
+        const double* dataB = srcB.ptr<double>();
+        double* dataC = dst.ptr<double>();
+        double eps = DBL_EPSILON; // prevent div0 problems
+
+        size_t stepA = srcA.step/sizeof(dataA[0]);
+        size_t stepB = srcB.step/sizeof(dataB[0]);
+        size_t stepC = dst.step/sizeof(dataC[0]);
+
+        if( !is_1d && cn == 1 )
+        {
+            for( k = 0; k < (cols % 2 ? 1 : 2); k++ )
             {
-                vxReleaseKernel(&fftobj.kernel[1]);
-                return status;
+                if( k == 1 )
+                    dataA += cols - 1, dataB += cols - 1, dataC += cols - 1;
+                dataC[0] = dataA[0] / (dataB[0] + eps);
+                if( rows % 2 == 0 )
+                    dataC[(rows-1)*stepC] = dataA[(rows-1)*stepA] / (dataB[(rows-1)*stepB] + eps);
+                if( !conjB )
+                    for( j = 1; j <= rows - 2; j += 2 )
+                    {
+                        double denom = dataB[j*stepB]*dataB[j*stepB] +
+                                       dataB[(j+1)*stepB]*dataB[(j+1)*stepB] + eps;
+
+                        double re = dataA[j*stepA]*dataB[j*stepB] +
+                                    dataA[(j+1)*stepA]*dataB[(j+1)*stepB];
+
+                        double im = dataA[(j+1)*stepA]*dataB[j*stepB] -
+                                    dataA[j*stepA]*dataB[(j+1)*stepB];
+
+                        dataC[j*stepC] = re / denom;
+                        dataC[(j+1)*stepC] = im / denom;
+                    }
+                else
+                    for( j = 1; j <= rows - 2; j += 2 )
+                    {
+                        double denom = dataB[j*stepB]*dataB[j*stepB] +
+                                       dataB[(j+1)*stepB]*dataB[(j+1)*stepB] + eps;
+
+                        double re = dataA[j*stepA]*dataB[j*stepB] -
+                                    dataA[(j+1)*stepA]*dataB[(j+1)*stepB];
+
+                        double im = dataA[(j+1)*stepA]*dataB[j*stepB] +
+                                    dataA[j*stepA]*dataB[(j+1)*stepB];
+
+                        dataC[j*stepC] = re / denom;
+                        dataC[(j+1)*stepC] = im / denom;
+                    }
+                if( k == 1 )
+                    dataA -= cols - 1, dataB -= cols - 1, dataC -= cols - 1;
             }
+        }
+
+        for( ; rows--; dataA += stepA, dataB += stepB, dataC += stepC )
+        {
+            if( is_1d && cn == 1 )
+            {
+                dataC[0] = dataA[0] / (dataB[0] + eps);
+                if( cols % 2 == 0 )
+                    dataC[j1] = dataA[j1] / (dataB[j1] + eps);
+            }
+
+            if( !conjB )
+                for( j = j0; j < j1; j += 2 )
+                {
+                    double denom = dataB[j]*dataB[j] + dataB[j+1]*dataB[j+1] + eps;
+                    double re = dataA[j]*dataB[j] + dataA[j+1]*dataB[j+1];
+                    double im = dataA[j+1]*dataB[j] - dataA[j]*dataB[j+1];
+                    dataC[j] = re / denom;
+                    dataC[j+1] = im / denom;
+                }
+            else
+                for( j = j0; j < j1; j += 2 )
+                {
+                    double denom = dataB[j]*dataB[j] + dataB[j+1]*dataB[j+1] + eps;
+                    double re = dataA[j]*dataB[j] - dataA[j+1]*dataB[j+1];
+                    double im = dataA[j+1]*dataB[j] + dataA[j]*dataB[j+1];
+                    dataC[j] = re / denom;
+                    dataC[j+1] = im / denom;
+                }
         }
     }
 
-
-
-    return status;
 }
 
-vx_status vxcSpectrumLayer(VXFFTOBJS fftobj, vx_array input, vx_array input1, vx_array output, int width, int height)
+
+
+Point2d phaseCorrelateRes(InputArray _src1, InputArray _src2, InputArray _window , double* response)
 {
-	vx_int32    index        = 0;
-    vx_uint32   input_ZP   = 0;
-    vx_border_t border;
-    vx_enum     dataFormat = VX_TYPE_FLOAT32;
-
-    border.constant_value.U8 = 0;
-    border.mode = VX_BORDER_CONSTANT;
-
-    if (dataFormat == VX_TYPE_FLOAT16)
+    static Mat OLD_FFT;
+    //分别得到两幅输入图像和窗函数的矩阵形式
+    Mat src1 = _src1.getMat();
+    Mat src2 = _src2.getMat();
+    Mat window = _window.getMat();
+    //输入图像的类型和大小的判断，必须一致，而且类型必须是32位或64位浮点灰度图像
+    CV_Assert( src1.type() == src2.type());
+    CV_Assert( src1.type() == CV_32FC1 || src1.type() == CV_64FC1 );
+    CV_Assert( src1.size == src2.size);
+    //如果使用窗函数，则窗函数的大小和类型必须与输入图像的一致
+    if(!window.empty())
     {
-        border.constant_value.U16 = 0;
+        CV_Assert( src1.type() == window.type());
+        CV_Assert( src1.size == window.size);
     }
-    else if (dataFormat == VX_TYPE_UINT8)
+    //因为要进行离散傅立叶变换，所以为了提高效率，就要得到最佳的图像尺寸
+    int M = getOptimalDFTSize(src1.rows);
+    int N = getOptimalDFTSize(src1.cols);
+ 
+    Mat padded1, padded2, paddedWin;
+    //生成尺寸修改以后的矩阵
+    if(M != src1.rows || N != src1.cols)   //最佳尺寸不是原图像的尺寸
     {
-        border.constant_value.U8 = input_ZP;
-    }
-
-    status        = vxLoadKernels(context, "fft");
-    if(VX_SUCCESS == status)
-    {
-		char * pKernelName = NULL;
-
-
-		switch(dataFormat)
-		{
-		case VX_TYPE_UINT8:
-			pKernelName = "com.vivantecorp.extension.rnn_uint8";
-			break;
-		case VX_TYPE_FLOAT32:
-			pKernelName = "com.vivantecorp.extension.powerSpectrum";
-			break;
-		case VX_TYPE_FLOAT16:
-		default:
-			return -4;
-		}			
-        if(fftobj.kernel[2] = vxGetKernelByName(context, pKernelName))// match with VXC code
+        //通过补零的方式填充多出来的像素
+        copyMakeBorder(src1, padded1, 0, M - src1.rows, 0, N - src1.cols, BORDER_CONSTANT, Scalar::all(0));
+        copyMakeBorder(src2, padded2, 0, M - src2.rows, 0, N - src2.cols, BORDER_CONSTANT, Scalar::all(0));
+ 
+        if(!window.empty())
         {
-            if(fftobj.node[2] = vxCreateGenericNode(fftobj.graph[fftobj.nGraphIdx&0x01], fftobj.kernel[2]))
-            {
-                status |= vxSetParameterByIndex(fftobj.node[2], index++, (vx_reference)input);
-                status |= vxSetParameterByIndex(fftobj.node[2], index++, (vx_reference)input1);
-                status |= vxSetParameterByIndex(fftobj.node[2], index++, (vx_reference)output);
-                status |= vxSetParameterByIndex(fftobj.node[2], index++, (vx_reference)fftobj.nLen);
-                status |= vxSetParameterByIndex(fftobj.node[2], index++, (vx_reference)fftobj.mLen);
-
-                status |= vxSetNodeAttribute(fftobj.node[2], VX_NODE_BORDER, &border, sizeof(border));
-
-                if(status != VX_SUCCESS)
-                {
-                    status = VX_ERROR_INVALID_PARAMETERS;
-                    vxReleaseNode(&fftobj.node[2]);
-                    vxReleaseKernel(&fftobj.kernel[2]);
-                    return status;
-                }
-            }
-            else
-            {
-                vxReleaseKernel(&fftobj.kernel[2]);
-                return status;
-            }
+            copyMakeBorder(window, paddedWin, 0, M - window.rows, 0, N - window.cols, BORDER_CONSTANT, Scalar::all(0));
         }
     }
-    return status;
+    else    //最佳尺寸与原图像的尺寸一致
+    {
+        padded1 = src1;
+        padded2 = src2;
+        paddedWin = window;
+    }
+ 
+    Mat FFT1, FFT2, P, Pm, C;
+ 
+    // perform window multiplication if available
+    //执行步骤1，两幅输入图像分别与窗函数逐点相乘
+    if(!paddedWin.empty())
+    {
+        // apply window to both images before proceeding...
+        multiply(paddedWin, padded1, padded1);
+        multiply(paddedWin, padded2, padded2);
+    }
+ 
+    // execute phase correlation equation
+    // Reference: http://en.wikipedia.org/wiki/Phase_correlation
+    //执行步骤2，分别对两幅图像取傅立叶变换
+    static bool fir_fps = 1;
+    if(fir_fps)
+    {
+        fir_fps = 0;
+        dft(padded1, FFT1, DFT_REAL_OUTPUT);
+        dft(padded2, FFT2, DFT_REAL_OUTPUT);
+    }
+    else
+    {
+        dft(padded2, FFT2, DFT_REAL_OUTPUT);
+        FFT1 = OLD_FFT;
+    }
+    //执行步骤3
+    //计算互功率谱的分子部分，即公式3中的分子，其中P为输出结果，true表示的是对FF2取共轭，所以得到的结果为：P=FFT1×FFT2*，mulSpectrums函数为通用函数
+    mulSpectrums(FFT1, FFT2, P, 0, true);
+    //计算互功率谱的分母部分，即公式3中的分母，结果为：Pm=|P|，magSpectrums函数就是在phasecorr.cpp文件内给出的，它的作用是对复数取模。
+    magSpectrums(P, Pm);
+    //计算互功率谱，即公式3，结果为：C=P / Pm，divSpectrums函数也是在phasecorr.cpp文件内给出的，它仿照mulSpectrums函数的写法，其中参数false表示不取共轭
+    divSpectrums(P, Pm, C, 0, false); // FF* / |FF*| (phase correlation equation completed here...)
+    //执行步骤4，傅立叶逆变换
+    idft(C, C); // gives us the nice peak shift location...
+    /*平移处理，fftShift函数也是在phasecorr.cpp文件内给出的，它的作用是把图像平均分割成——左上、左下、右上、右下，把左上和右下对调，把右上和左下对调。它的目的是把能量调整到图像的中心，也就是图像的中心对应于两幅图像相频差为零的地方，即没有发生位移的地方。*/
+    fftShift(C); // shift the energy to the center of the frame.
+    OLD_FFT = FFT2;
+    //执行步骤5
+    // locate the highest peak
+    //找到最大点处的像素位置，minMaxLoc为通用函数
+    Point peakLoc;
+    minMaxLoc(C, NULL, NULL, NULL, &peakLoc);
+ 
+    // get the phase shift with sub-pixel accuracy, 5x5 window seems about right here...
+    //在5×5的窗体内确定亚像素精度的坐标位置
+    Point2d t;
+    // weightedCentroid也是在phasecorr.cpp文件内给出的，它是利用公式4来计算更精确的坐标位置
+    t = weightedCentroid(C, peakLoc, Size(5, 5), response);
+ 
+    // max response is M*N (not exactly, might be slightly larger due to rounding errors)
+    //求最大响应值
+    if(response)
+        *response /= M*N;
+ 
+    // adjust shift relative to image center...
+    //最终确定位移量
+    //先找到图像中点，然后用中点减去由步骤5得到的坐标位置
+    Point2d center((double)padded1.cols / 2.0, (double)padded1.rows / 2.0);
+ 
+    return (center - t);
+
 }
 
-vx_status vxcIFFTHorLayer(VXFFTOBJS fftobj, vx_array input, vx_array output, int nLen, int n, int mLen, int m)
+
+Mat test_LogPolarFFTTemplateMatch(Mat im0, Mat im1, double canny_threshold1, double canny_threshold2, int idx)
 {
-	vx_int32    index        = 0;
-    vx_uint32   input_ZP   = 0;
-    vx_border_t border;
-    vx_enum     dataFormat = VX_TYPE_FLOAT32;
+    if(VIP7K)
+//        im1 = vx_Canny(im1, canny_threshold1, canny_threshold2);
+        threshold(im1, im1, 100, 200, CV_THRESH_BINARY);
+    else
+        Canny(im1, im1, canny_threshold2, canny_threshold1, 3, 1);
+    if(im0.type()!=CV_32FC1)
+    im0.convertTo(im0, CV_32FC1, 1.0 / 255.0);
+    if(im1.type()!=CV_32FC1)
+    im1.convertTo(im1, CV_32FC1, 1.0 / 255.0);
 
-    border.constant_value.U8 = 0;
-    border.mode = VX_BORDER_CONSTANT;
-
-    if (dataFormat == VX_TYPE_FLOAT16)
-    {
-        border.constant_value.U16 = 0;
-    }
-    else if (dataFormat == VX_TYPE_UINT8)
-    {
-        border.constant_value.U8 = input_ZP;
-    }
-
-    status        = vxLoadKernels(context, "fft");
-    if(VX_SUCCESS == status)
-    {
-
-		char * pKernelName = NULL;
-
-
-		switch(dataFormat)
-		{
-		case VX_TYPE_UINT8:
-			pKernelName = "com.vivantecorp.extension.rnn_uint8";
-			break;
-		case VX_TYPE_FLOAT32:
-			pKernelName = "com.vivantecorp.extension.ifft_h_256x128";
-			break;
-		case VX_TYPE_FLOAT16:
-		default:
-			return -4;
-		}			
-		
-        if(fftobj.kernel[3] = vxGetKernelByName(context, pKernelName))// match with VXC code
-        {
-            if(fftobj.node[3] = vxCreateGenericNode(fftobj.graph[fftobj.nGraphIdx&0x01], fftobj.kernel[3]))
-            {
-                status |= vxSetParameterByIndex(fftobj.node[3], index++, (vx_reference)input);
-                status |= vxSetParameterByIndex(fftobj.node[3], index++, (vx_reference)output);
-                status |= vxSetParameterByIndex(fftobj.node[3], index++, (vx_reference)fftobj.nLen);//(vx_reference)nLen_s);
-                status |= vxSetParameterByIndex(fftobj.node[3], index++, (vx_reference)fftobj.nAligned);//(vx_reference)n_s);
-                status |= vxSetParameterByIndex(fftobj.node[3], index++, (vx_reference)fftobj.mLen);//(vx_reference)mLen_s);
-                status |= vxSetParameterByIndex(fftobj.node[3], index++, (vx_reference)fftobj.mAligned);//(vx_reference)m_s);
-
-                status |= vxSetNodeAttribute(fftobj.node[3], VX_NODE_BORDER, &border, sizeof(border));
-
-                if(status != VX_SUCCESS)
-                {
-                    status = VX_ERROR_INVALID_PARAMETERS;
-                    vxReleaseNode(&fftobj.node[3]);
-                    vxReleaseKernel(&fftobj.kernel[3]);
-                    return status;
-                }
-            }
-            else
-            {
-                vxReleaseKernel(&fftobj.kernel[3]);
-                return status;
-            }
-        }
-    }
-    return status;
-}
-
-vx_status vxcIFFTVerLayer(VXFFTOBJS fftobj, vx_array input, vx_array output, vx_array imgOut, int nLen, int n, int mLen, int m)
-{
-    vx_int32    index        = 0;
-    vx_uint32   input_ZP   = 0;
-    vx_border_t border;
-    vx_enum     dataFormat = VX_TYPE_FLOAT32;
-
-    border.constant_value.U8 = 0;
-    border.mode = VX_BORDER_CONSTANT;
-
-    if (dataFormat == VX_TYPE_FLOAT16)
-    {
-        border.constant_value.U16 = 0;
-    }
-    else if (dataFormat == VX_TYPE_UINT8)
-    {
-        border.constant_value.U8 = input_ZP;
-    }
-
-    status        = vxLoadKernels(context, "fft");
-    if(VX_SUCCESS == status)
-    {
-		char * pKernelName = NULL;
-
-
-		switch(dataFormat)
-		{
-		case VX_TYPE_UINT8:
-			pKernelName = "com.vivantecorp.extension.rnn_uint8";
-			break;
-		case VX_TYPE_FLOAT32:
-			pKernelName =  "com.vivantecorp.extension.ifft_v_256x128";
-			break;
-		case VX_TYPE_FLOAT16:
-		default:
-			return -4;
-		}			
-				
-        if(fftobj.kernel[4] = vxGetKernelByName(context, pKernelName))// match with VXC code
-        {
-            if(fftobj.node[4] = vxCreateGenericNode(fftobj.graph[fftobj.nGraphIdx&0x01], fftobj.kernel[4]))
-            {
-                status |= vxSetParameterByIndex(fftobj.node[4], index++, (vx_reference)input);
-                status |= vxSetParameterByIndex(fftobj.node[4], index++, (vx_reference)output);
-                status |= vxSetParameterByIndex(fftobj.node[4], index++, (vx_reference)imgOut);
-                status |= vxSetParameterByIndex(fftobj.node[4], index++, (vx_reference)fftobj.nLen);//(vx_reference)nLen_s);
-                status |= vxSetParameterByIndex(fftobj.node[4], index++, (vx_reference)fftobj.nAligned);//(vx_reference)n_s);
-                status |= vxSetParameterByIndex(fftobj.node[4], index++, (vx_reference)fftobj.mLen);//(vx_reference)mLen_s);
-                status |= vxSetParameterByIndex(fftobj.node[4], index++, (vx_reference)fftobj.mAligned);//(vx_reference)m_s);
-
-                status |= vxSetNodeAttribute(fftobj.node[4], VX_NODE_BORDER, &border, sizeof(border));
-
-                if(status != VX_SUCCESS)
-                {
-                    status = VX_ERROR_INVALID_PARAMETERS;
-                    vxReleaseNode(&fftobj.node[4]);
-                    vxReleaseKernel(&fftobj.kernel[4]);
-                    return status;
-                }
-            }
-            else
-            {
-                vxReleaseKernel(&fftobj.kernel[4]);
-                return status;
-            }
-        }
-    }
-    return status;
-}
-
-void init_vx(VXFFTOBJS & fftobj, int width, int height, int src_format, int bIndex, int offsetX, int offsetY)
-{
-	unsigned long 	arraySize = 0;
-	vx_size 		itemNum = 0;
-	vx_size 		itemSize = 0;
-	vx_map_id 		mapId = 0;
-	vx_size 		capacity  = 0;
-    vx_enum    		dst_format = VX_TYPE_FLOAT32;
-    vx_map_id 		ifftRealmapId = 0;
-    vx_map_id 		ifftImgmapId = 0;
-    vx_size 		itemNumIr = 0;
-    vx_size 		itemSizeIr = 0;
-    vx_size 		itemNumIi = 0;
-    vx_size 		itemSizeIi = 0;
-
-	float 		val = 0.0; 
-	char 		x	= 0;	
-	int			i = 0;
-	if(context == NULL)
-
-	{
-		context = vxCreateContext();
-
-        
-		fftobj.m = calculate_M(height);    
-		fftobj.n = calculate_M(width);	
-		fftobj.nLen = vxCreateScalar(context, VX_TYPE_INT32, &width);
-		fftobj.mLen = vxCreateScalar(context, VX_TYPE_INT32, &height);
-		fftobj.nAligned = vxCreateScalar(context, VX_TYPE_INT32, &fftobj.n);
-		fftobj.mAligned = vxCreateScalar(context, VX_TYPE_INT32, &fftobj.m);
-        fftobj.offsetX_s     = vxCreateScalar(context, VX_TYPE_INT32, &offsetX);
-        fftobj.offsetY_s     = vxCreateScalar(context, VX_TYPE_INT32, &offsetY);
-        fftobj.width = width;
-        fftobj.height= height;
-		arraySize =width * height *2;
-		//fftobj.input_ptr = (complex_fft*)malloc(arraySize * vxcGetTypeSize(dst_format));
-
-        fftobj.imageIn = vxCreateImage(context, width, height, VX_DF_IMAGE_U8);
-		fftobj.arrayIn = vxCreateArray(context, src_format, arraySize * vxcGetTypeSize(src_format)/2);
-		fftobj.arrayTmp = vxCreateArray(context, src_format, arraySize * vxcGetTypeSize(src_format)/2);
-		//fftobj.arrayOut = vxCreateArray(context, dst_format, arraySize * vxcGetTypeSize(dst_format));
-		fftobj.arrayFftOut = vxCreateArray(context, dst_format, arraySize * vxcGetTypeSize(dst_format));
-		fftobj.arraymagOut = vxCreateArray(context, dst_format, arraySize * vxcGetTypeSize(dst_format));
-		fftobj.arrayPreFftOut = vxCreateArray(context, dst_format, arraySize * vxcGetTypeSize(dst_format));
-		fftobj.arrayFftHorOut = vxCreateArray(context, dst_format, arraySize * vxcGetTypeSize(dst_format));
-		fftobj.arrayIfftHorOut = vxCreateArray(context, dst_format, arraySize * vxcGetTypeSize(dst_format));
-		fftobj.arrayIfftOut = vxCreateArray(context, dst_format, arraySize * vxcGetTypeSize(dst_format) / 2);
-		fftobj.ifftImgOut = vxCreateArray(context, dst_format, arraySize * vxcGetTypeSize(dst_format) / 2);
-		
-		
-		for( i = 0;i<arraySize;i++)
-
-		{
-			vxAddArrayItems(fftobj.arrayFftOut, 1, &val, 0);	
-		}
-		
-		for( i = 0;i<(arraySize>>1);i++)
-
-		{
-			vxAddArrayItems(fftobj.arrayIfftOut, 1, &val, 0);
-			vxAddArrayItems(fftobj.arrayIn, 1, &x, 0);
-			vxAddArrayItems(fftobj.arrayTmp,1, &x, 0);
-		}
-
-        
-        
-		vxQueryArray(fftobj.arrayIn, VX_ARRAY_CAPACITY, &capacity, sizeof(vx_size));
-		vxQueryArray(fftobj.arrayIn, VX_ARRAY_NUMITEMS, &itemNum, sizeof(vx_size));
-		vxQueryArray(fftobj.arrayIn, VX_ARRAY_ITEMSIZE, &itemSize, sizeof(vx_size));
-        vx_rectangle_t rect_remap = {0,0,width,height};
-        vx_imagepatch_addressing_t imgInfo = VX_IMAGEPATCH_ADDR_INIT;
-        status = vxMapImagePatch(fftobj.imageIn,&rect_remap,0,&mapId,&imgInfo,(void**)&fftobj.mapPtrIn,VX_READ_AND_WRITE,VX_MEMORY_TYPE_HOST,0);
-//		status = vxMapArrayRange(fftobj.arrayIn, 0, arraySize>>1, &mapId, &itemSize, (void**)&fftobj.mapPtrIn, VX_READ_AND_WRITE, VX_MEMORY_TYPE_HOST, 0);
-		status = vxQueryArray(fftobj.arrayFftOut, VX_ARRAY_NUMITEMS, &itemNum, sizeof(vx_size));
-		status = vxQueryArray(fftobj.arrayFftOut, VX_ARRAY_ITEMSIZE, &itemSize, sizeof(vx_size));
-		status = vxMapArrayRange(fftobj.arrayFftOut, 0, itemNum/*capacity*/, &mapId, &itemSize, (void**)&fftobj.mapPtr, VX_READ_ONLY, VX_MEMORY_TYPE_HOST, 0);
-		status = vxQueryArray(fftobj.arrayIfftOut, VX_ARRAY_NUMITEMS, &itemNumIr, sizeof(vx_size));
-		status = vxQueryArray(fftobj.arrayIfftOut, VX_ARRAY_ITEMSIZE, &itemSizeIr, sizeof(vx_size));
-		status = vxMapArrayRange(fftobj.arrayIfftOut, 0, itemNumIr/*capacity*/, &ifftRealmapId, &itemSizeIr, (void**)&fftobj.mapPtr_ir, VX_READ_ONLY, VX_MEMORY_TYPE_HOST, 0);
-
-	}
-
-	if(fftobj.graph[bIndex&0x01] == NULL)
-	{
-		fftobj.graph[bIndex&0x01] = vxCreateGraph(context);
-
-		status = vxcFFTHorLayer(fftobj, fftobj.imageIn, fftobj.arrayTmp, fftobj.arrayFftHorOut, fftobj.width, fftobj.n, fftobj.height, fftobj.m, offsetX, offsetY);
-
-		if((bIndex & 0x01) == 0)
-		{
-			vxcFFTVerLayer(fftobj, fftobj.arrayFftHorOut, fftobj.arrayFftOut, fftobj.width, fftobj.n, fftobj.height, fftobj.m);
-			vxcSpectrumLayer(fftobj, fftobj.arrayFftOut, fftobj.arrayPreFftOut ,fftobj.arraymagOut,fftobj.width, fftobj.height);
-		}
-		else
-		{
-			vxcFFTVerLayer(fftobj, fftobj.arrayFftHorOut, fftobj.arrayPreFftOut, fftobj.width, fftobj.n, fftobj.height, fftobj.m);
-			vxcSpectrumLayer(fftobj, fftobj.arrayPreFftOut ,fftobj.arrayFftOut,fftobj.arraymagOut,fftobj.width, fftobj.height);
-		}
-		vxcIFFTHorLayer(fftobj,  fftobj.arraymagOut, fftobj.arrayIfftHorOut,fftobj.width, fftobj.n, fftobj.height, fftobj.m);
-		vxcIFFTVerLayer(fftobj, fftobj.arrayIfftHorOut, fftobj.arrayIfftOut, fftobj.ifftImgOut, fftobj.width, fftobj.n, fftobj.height, fftobj.m);
-        
-		status = vxVerifyGraph(fftobj.graph[fftobj.nGraphIdx&0x01]);
-	}	
-	
-}
-
-void vxFFT(VXFFTOBJS & fftobj, Mat src, Mat &dst)
-{
-	int srcnSize = src.rows * src.cols * sizeof(char);
-	int dstnSize = src.rows * src.cols * sizeof(float);
+    Mat im1_ROI = im1(Rect(2,26,256,128));
+	Mat im0_ROI = im0(Rect(2,26,256,128));
     
-	memcpy((char *)fftobj.mapPtrIn, (char *)src.data, srcnSize);
-//	gcoOS_CacheFlush( NULL, NULL,fftobj.mapPtrIn, srcnSize);
-	
-    status = vxProcessGraph(fftobj.graph[fftobj.nGraphIdx&0x01]); 
-    fftobj.nGraphIdx++;
-	memcpy((float *)dst.data,(float *)fftobj.mapPtr_ir, dstnSize);
+    Point2d tr = phaseCorrelateRes(im1_ROI, im0_ROI);
 
-}
-
-static VXFFTOBJS vxFFTObj;
-
-
-Point2d vx_PhaseCorrelation2D(Mat src1)
-{
-    
-	Point 		peakLoc;
-	Point2d 	t={0};
-	static Mat dstimg(Size(256,128),CV_32FC1,Scalar::all(0));
-	static bool vxFFTObjInit = false;
-	if(vxFFTObjInit == false)
-	{
-		memset(&vxFFTObj, 0x00, sizeof(VXFFTOBJS));
-		init_vx(vxFFTObj,src1.cols,src1.rows,VX_TYPE_CHAR,0, 2, 26);	
-		vxFFTObj.nGraphIdx++;
-		init_vx(vxFFTObj,src1.cols,src1.rows,VX_TYPE_CHAR,1, 2, 26);	
-		vxFFTObj.nGraphIdx++;
-		vxFFTObjInit =  true;
-	}
-    
-	vxFFT(vxFFTObj, src1, dstimg);
-
-    
-	fftShift(dstimg); // shift the energy to the center of the frame.	   
-	minMaxLoc(dstimg, NULL, NULL, NULL, &peakLoc);
-	t = weightedCentroid(dstimg, peakLoc, Size(5, 5), 0);
-
-	Point2d center((double)src1.cols / 2.0, (double)src1.rows / 2.0);
-	
-	t.x  = center.x - t.x;
-	t.y = center.y - t.y;
-	
-    return (t);  
-
-}
-
-static bool first_fft = true;
-
-Mat vx_LogPolarFFTTemplateMatch(Mat im0, Mat im1, double canny_threshold1, double canny_threshold2, int idx)
-{
-    Canny(im1, im1, canny_threshold2, canny_threshold1, 3, 1);
-    if(im0.type() != CV_8UC1)
-    im0.convertTo(im0, CV_8UC1);
-    if(im1.type()!= CV_8UC1)
-    im1.convertTo(im1, CV_8UC1);
-     
-	Mat im1_ROI_t = im1;//(Rect(2,26,256,128));
-    Mat im1_ROI = im1_ROI_t.clone();
-
-    if(first_fft == true)
-	{
-		first_fft = false;
-        Mat im0_ROI_t = im0;//(Rect(2,26,256,128));
-        Mat im0_ROI = im0_ROI_t.clone();
-        vx_PhaseCorrelation2D(im0_ROI); 
-	}
-
-	clock_t c3 = clock(); 
-	Point2d tr = vx_PhaseCorrelation2D(im1_ROI); //vx	
-	clock_t c4 = clock(); 
-    if(DEBUG_MSG)
-	    cout<< "vxFFT Running time	is: " << static_cast<double>(c4 - c3) / CLOCKS_PER_SEC * 1000 << "ms" << endl;
-
-
+    clock_t mat_st = clock();
+ 
 	Mat mov_mat = Mat::zeros(Size(3, 2), CV_64FC1);
 
 	mov_mat.at<double>(0, 0) = 1.0;
@@ -837,8 +653,12 @@ Mat vx_LogPolarFFTTemplateMatch(Mat im0, Mat im1, double canny_threshold1, doubl
 
 	mov_mat.at<double>(0, 2) = -tr.x;
 	mov_mat.at<double>(1, 2) = tr.y;
+
+    clock_t mat_en = clock();
     if(DEBUG_MSG)
-        cout << mov_mat << endl;
+    cout<< "##### End Phase time = " << static_cast<double>(mat_en - mat_st) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl;
+
 	return mov_mat;
 
 }
+

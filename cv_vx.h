@@ -16,6 +16,8 @@
 using namespace cv;
 Mat vx_Affine_RGB(Mat input, Mat matrix);
 Mat vx_Remap_RGB(Mat input, bool Revers = false);
+Mat vx_Canny(Mat canny_input, int up_thresh, int low_thresh);
+
 void init_vx(vx_context& context, vx_graph& graph);
 void init_vx_remap( Mat  map_x, Mat map_y);
 

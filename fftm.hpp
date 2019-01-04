@@ -13,5 +13,6 @@ using namespace std;
 //-----------------------------------------------------------------------------------------------------
 cv::Mat LogPolarFFTTemplateMatch(cv::Mat im0, cv::Mat im1, double canny_threshold1=200, double canny_threshold2=100, int idx = 0);
 cv::Mat vx_LogPolarFFTTemplateMatch(cv::Mat im0, cv::Mat im1, double canny_threshold1=200, double canny_threshold2=100, int idx = 0);
+Mat test_LogPolarFFTTemplateMatch(Mat im0, Mat im1, double canny_threshold1=200, double canny_threshold2=100, int idx=0);
 #endif
 #endif

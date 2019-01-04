@@ -235,8 +235,9 @@ bool _ini_vx_canny = true;
 void init_vx_Canny( VXCannyOBJS & cannyobj, int up_thresh, int low_thresh)
 {
     _ini_vx_canny = false;
-    cannyobj.height = 128;
-    cannyobj.width = 256;
+    cannyobj.height = 180;
+    cannyobj.width = 260;
+    context = vxCreateContext();
     cannyobj.canny_format = VX_DF_IMAGE_U8;
     cannyobj.graph = vxCreateGraph(context);
     cannyobj.vx_image_input = vxCreateImage( context, cannyobj.width, cannyobj.height, cannyobj.canny_format);
@@ -246,10 +247,12 @@ void init_vx_Canny( VXCannyOBJS & cannyobj, int up_thresh, int low_thresh)
     vx_int32 gsize = 3;
     vx_uint32 upper = up_thresh;
     vx_uint32 lower = low_thresh;
-    vxSetThresholdAttribute(cannyobj.threshold, VX_THRESHOLD_TYPE_RANGE, &lower, sizeof(lower));
-    vxSetThresholdAttribute(cannyobj.threshold, VX_THRESHOLD_TYPE_RANGE, &upper, sizeof(upper));
+//    vxSetThresholdAttribute(cannyobj.threshold, VX_THRESHOLD_TYPE_RANGE, &lower, sizeof(lower));
+//    vxSetThresholdAttribute(cannyobj.threshold, VX_THRESHOLD_TYPE_RANGE, &upper, sizeof(upper));
+    vxSetThresholdAttribute(cannyobj.threshold, VX_THRESHOLD_THRESHOLD_LOWER, &lower, sizeof(lower));
+   	vxSetThresholdAttribute(cannyobj.threshold, VX_THRESHOLD_THRESHOLD_UPPER, &upper, sizeof(upper));
 
-    vx_rectangle_t rect_canny = {0,0,width,height};
+    vx_rectangle_t rect_canny = {0,0,260,180};
     vx_map_id map_id_canny = 0;
     vx_imagepatch_addressing_t imgInfo_canny = VX_IMAGEPATCH_ADDR_INIT;
     
@@ -269,9 +272,12 @@ Mat vx_Canny(Mat canny_input, int up_thresh, int low_thresh)
     if(_ini_vx_canny)
         init_vx_Canny(vxcannyobj, up_thresh, low_thresh);
     memcpy((uchar *)vxcannyobj.imgPtrIn,(uchar *)canny_input.data,sizeof(uchar)*SIZE);
-    Mat canny_output = Mat::zeros(Size(256, 128), CV_8UC1);
+//    imwrite("debug/canny_input.jpg", canny_input);
+    static Mat canny_output = Mat::zeros(Size(260, 180), CV_8UC1);
     vxProcessGraph(vxcannyobj.graph);
-    memcpy((uchar *)canny_output.data,(uchar *)vxcannyobj.imgPtrOut,sizeof(uchar)*SIZE);
+    canny_output.data = (uchar *)vxcannyobj.imgPtrOut;
+//    imwrite("debug/canny.jpg", canny_output);
+    return canny_output;
 }
 
 #if 0

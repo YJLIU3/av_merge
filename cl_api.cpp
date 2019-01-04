@@ -122,7 +122,6 @@ int init_cl_plt(CLpltOBJ &pltobj)
         platform = platforms[0];
         free(platforms);
     }
-   
     cl_uint             numDevices = 0;
     status = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 0, NULL, &numDevices);
     if (numDevices == 0)
@@ -145,7 +144,6 @@ int init_cl_plt(CLpltOBJ &pltobj)
     pltobj.globaworksize[0] = Map_tab_wid;
     pltobj.globaworksize[1] = Map_tab_hei;
 
-
     return status;
 }
 
@@ -158,7 +156,6 @@ int init_cl_mem_obj(CLpltOBJ &pltobj, CLmemOBJ &memobj, Mat map_x, Mat map_y, vo
     status = convertToString(filename, sourceStr);
     const char *source = sourceStr.c_str();
     size_t sourceSize[] = {strlen(source)};
-    
     for(int i = 0; i < Cmd_Que_Num; i++)
     {
         memobj.CmdQue[i] = clCreateCommandQueue(pltobj.context, pltobj.devices[0], 0, &status);
@@ -206,6 +203,7 @@ int init_cl_mem_obj(CLpltOBJ &pltobj, CLmemOBJ &memobj, Mat map_x, Mat map_y, vo
     {
         memobj.inputImgMap[i] = clCreateImage(pltobj.context, CL_MEM_READ_ONLY || CL_MEM_ALLOC_HOST_PTR, &img_format, &pixelDesc, NULL, &status);
         CHECK_ERROR(status, "clCreateImage2D failed. (inputImgMap)");
+
         memobj.mapPtr_in[i] = clEnqueueMapImage( memobj.CmdQue[i], memobj.inputImgMap[i], CL_TRUE, CL_MAP_WRITE, 
         imageOrigin, imageRegion, &imageRowPitch_in, NULL, 0, NULL, NULL, &status);
         CHECK_ERROR(status, "clEnqueueMapBuffer failed. (resultBuf)");
@@ -214,7 +212,7 @@ int init_cl_mem_obj(CLpltOBJ &pltobj, CLmemOBJ &memobj, Mat map_x, Mat map_y, vo
     }
     memobj.outputImgMap = clCreateImage(pltobj.context, CL_MEM_WRITE_ONLY || CL_MEM_ALLOC_HOST_PTR, &img_format, &pixelDesc, NULL, &status);
     CHECK_ERROR(status, "clCreateImage2D failed. (outputImage)");
-    
+
     for(int i = 0; i < Cmd_Que_Num; i++)
     {
         int argIdx = 0;
@@ -225,7 +223,7 @@ int init_cl_mem_obj(CLpltOBJ &pltobj, CLmemOBJ &memobj, Mat map_x, Mat map_y, vo
     }
     clmemobj.mapPtr_out = clEnqueueMapImage( clmemobj.CmdQue[3], clmemobj.outputImgMap, CL_TRUE, CL_MAP_READ, 
          imageOrigin, imageRegion,&imageRowPitch_in, NULL, 0, NULL, NULL, NULL); 
-    
+    cout << " 5 " << endl;
     return status;
 }
 extern "C" int gpu7k_get_viraddr(void* addrarray_f[], void* addrarray_r[], int size, int addr_cnt);
