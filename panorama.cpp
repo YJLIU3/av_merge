@@ -4,14 +4,11 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/xfeatures2d.hpp>
 #include<time.h> 
-#include "fftm.hpp"
-#include "cv_vx.h"
+#include "fftm.hpp" 
 #include "cl_api.h"
 
-static Mat front_before;
-static Mat front_now = Mat::zeros(image_size, CV_8UC1);
-static Mat rear_before;
-static Mat rear_now = Mat::zeros(image_size, CV_8UC1);
+
+
 static Mat matrix_bypast[25];
 int bypast_cont = 0;
 extern void *remap_gray_ptr[1];
@@ -141,7 +138,9 @@ void Panorama::expand(Mat input, Mat& output)
 
 Mat Panorama::front_process(Mat front, Mat rear)
 {
-    
+    static Mat front_before;
+    static Mat front_now = Mat::zeros(image_size, CV_32FC1);
+
     if (bypast_cont > 23)
 		bypast_cont = 0;
 
@@ -158,6 +157,7 @@ Mat Panorama::front_process(Mat front, Mat rear)
 		preImg = im1;
 
 		front_before = front;
+        front_before.convertTo(front_before, CV_32FC1, 1/255.0);
 		output = im1;
         
         init_cl_Affine(cl_affine_Ptr);
@@ -172,7 +172,7 @@ Mat Panorama::front_process(Mat front, Mat rear)
             imMask2 = weight.clone();
 		
 		    create_timeImg_from_mask(imMask2, imTime2, idx);
-            
+            front_now.convertTo(front_now, CV_32FC1);
             expand(front, im2);
         }
 
@@ -185,8 +185,8 @@ Mat Panorama::front_process(Mat front, Mat rear)
         clock_t warp_st1 = clock();
         Mat matrix;
 
-        if(!VIP7K)
-            matrix = vx_LogPolarFFTTemplateMatch(front_before, front_now, 200, 100, idx);
+        if(!VIP7K);
+//          matrix = vx_LogPolarFFTTemplateMatch(front_before, front_now, 200, 100, idx);
         else
  		    matrix = test_LogPolarFFTTemplateMatch(front_before, front_now, 200, 100, idx);
         clock_t warp_st2 = clock();
@@ -247,7 +247,7 @@ Mat Panorama::front_process(Mat front, Mat rear)
 
         clock_t warp_st5= clock();
  
-		front_before = front_now.clone();
+		front_before = front_now;
         
 
         output.data = im1t.data;
@@ -261,6 +261,8 @@ Mat Panorama::front_process(Mat front, Mat rear)
 
 Mat Panorama::rear_process(Mat front, Mat rear)
 {
+    static Mat rear_before;
+    static Mat rear_now = Mat::zeros(image_size, CV_32FC1);
     if (bypast_cont > 23)
 		bypast_cont = 0;
 
@@ -278,7 +280,7 @@ Mat Panorama::rear_process(Mat front, Mat rear)
         
 		preImg = im1;
         rear_before = rear;
-        
+        rear_before.convertTo(rear_before, CV_32FC1, 1/255.0);
         init_cl_Affine(cl_affine_Ptr);
         cout << cl_affine_Ptr[0] << "ptr" << endl;
 		output = im1;
@@ -298,7 +300,8 @@ Mat Panorama::rear_process(Mat front, Mat rear)
         }
 
         rear_now.data = (uchar *)remap_gray_ptr[0];
-        
+//        Mat hhh = 255.0 * rear_now;
+//imwrite("debug/front_thre.jpg", hhh);        
         clock_t b = clock();
         
         if(DEBUG_MSG)
@@ -308,8 +311,8 @@ Mat Panorama::rear_process(Mat front, Mat rear)
         Mat matrix;
 
         
-        if(!VIP7K)
-            matrix = vx_LogPolarFFTTemplateMatch(rear_before, rear_now,  200, 100, idx);
+        if(!VIP7K);
+//          matrix = vx_LogPolarFFTTemplateMatch(rear_before, rear_now,  200, 100, idx);
         else
  		    matrix = test_LogPolarFFTTemplateMatch(rear_before, rear_now, 200, 100, idx);
 
@@ -331,7 +334,7 @@ Mat Panorama::rear_process(Mat front, Mat rear)
             matrix = matrix_back;
          }
         
-        
+        Mat test = matrix;
          matrix_bypast[bypast_cont++] = matrix;
          matrix = Mat(2, 3, CV_64FC1, Scalar(0.0));
         
@@ -352,17 +355,27 @@ Mat Panorama::rear_process(Mat front, Mat rear)
                 matrix += matrix_bypast[i] / 24.0;
             }
          }
-        
+        if(abs(matrix.at<double>(0, 2)) < 0.1 && abs(matrix.at<double>(1, 2)) < 0.1)
+        {
+            matrix.at<double>(0, 2) = 0;
+            matrix.at<double>(1, 2) = 0;
+        }
+        else
+        {
+            matrix.at<double>(0, 2) = 0;
+            matrix.at<double>(1, 2) = matrix.at<double>(1, 2) + 0.0;
+        }
         matrix_back = matrix;
+
+        test.at<double>(1, 2) = test.at<double>(1, 2) - 2.5;
 
         clock_t warp_st4 = clock();
         if(DEBUG_MSG)
         cout<< "##### Process_matrix time = " << static_cast<double>(warp_st4 - warp_st3) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl;   
 
         clock_t warp_st = clock();
-        
         if(VIP7K)
-            im1t = cl_exc_affine(im1, matrix, 1);
+            im1t = cl_exc_affine(im1, test, 1);
 
         else
             warpAffine(im1, im1t, matrix, WEIGHT_BIGSIZE, INTER_NEAREST);
@@ -374,7 +387,7 @@ Mat Panorama::rear_process(Mat front, Mat rear)
 
         clock_t warp_st5= clock();
 
-        rear_before = rear_now.clone();
+        rear_before = rear_now;
     
         output.data = im1t.data;
         
@@ -383,7 +396,7 @@ Mat Panorama::rear_process(Mat front, Mat rear)
         clock_t warp_st6 = clock();
         
         if(DEBUG_MSG)
-        cout<< "##### Blending Process = " << static_cast<double>(warp_st6 - warp_st5) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl; 
+            cout<< "##### Blending Process = " << static_cast<double>(warp_st6 - warp_st5) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl; 
 
 	}
 

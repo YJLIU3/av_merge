@@ -2,7 +2,6 @@
 #include <opencv2/opencv.hpp>
 #include "parameter.h"
 #include <time.h> 
-#include <cv_vx.h>
 #include <cl_api.h>
 #include <sstream>
 
@@ -203,7 +202,7 @@ Mat av_merge(Mat front_image, Mat rear_image, bool Reversing)
     		resize(front_trs, front_trs, image_size);
     		resize(rear_trs, rear_trs, image_size);
     	}
-        imwrite("debug/front_trs.jpg", front_trs);
+//        imwrite("debug/front_trs.jpg", front_trs);
         clock_t end_process = clock();
         if(!DEBUG_MSG)
             cout<< "###### front process Running time  is: " << static_cast<double>(end_process - end_remap) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl;
@@ -219,7 +218,7 @@ Mat av_merge(Mat front_image, Mat rear_image, bool Reversing)
             remap(rear_image, rear_trs, Map_Rx, Map_Ry, INTER_NEAREST, BORDER_CONSTANT);
         
         if(DEBUG_MSG_IMG)
-        imwrite("debug/rear_trs.png",rear_trs);
+            imwrite("debug/rear_trs.png",rear_trs);
         if(front_trs.size() != image_size)
     	{
             if(DEBUG_MSG)

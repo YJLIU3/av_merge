@@ -20,17 +20,14 @@ __kernel void imageRemap(__write_only image2d_t outImg,
     //int offset = gidy * width * channel;
     int4 data = read_imagei(inImg, sampler, coord1);
     int gray_data = (data.x*0.299f + data.y*0.587f+data.z*0.114f);
-/*
-    if(gray_data > 50 && gray_data < 200)
+    if(gray_data > 50)
     {
         gray[gidy * 260 + gidx] = gray_data;    
     }else
     {
         gray[gidy * 260 + gidx] = 0.0;
     }
-*/  
-    gray[gidy * 260 + gidx] = gray_data;
-
+    
     
     write_imagei(outImg, coord, data);
 }

@@ -1,4 +1,4 @@
-#include <cl_api.h>
+#include <cl_test.h>
 
 #define SUCCESS 0
 #define FAILURE 1
@@ -244,7 +244,6 @@ int init_cl_mem_obj(CLpltOBJ &pltobj, CLmemOBJ &memobj, Mat map_x, Mat map_y, vo
     remap_gray_ptr[0] = clmemobj.mapGrayptr;
     return status;
 }
-extern "C" int gpu7k_get_viraddr(void* addrarray_f[], void* addrarray_r[], int size, int addr_cnt);
 
 int gpu7k_get_viraddr(void* addrarray_f[], void* addrarray_r[], int size, int addr_cnt)
 {

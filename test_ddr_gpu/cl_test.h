@@ -17,7 +17,6 @@ using namespace std;
 Mat cl_exc_remap(Mat input, Mat map_x, Mat map_y);
 Mat cl_exc_affine(Mat input,  Mat matrix, bool Reversing);
 int init_cl_Affine(void * affinePtr[]);
-//int gpu7k_get_viraddr(void* addrarray_f[], void* addrarray_r[], int size, int addr_cnt);
-
+int gpu7k_get_viraddr(void* addrarray_f[], void* addrarray_r[], int size, int addr_cnt);
 
 #endif

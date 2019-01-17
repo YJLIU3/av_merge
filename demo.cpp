@@ -1,6 +1,7 @@
 #include <opencv2/opencv.hpp>
 #include <panorama.h>
 #include <iostream>
+#include <cl_api.h>
 
 using namespace std;
 using namespace cv;

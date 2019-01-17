@@ -1,14 +1,6 @@
 #include "opencv2/core.hpp"
 #include "opencv2/opencv.hpp"
-#include "parameter.h"
-#include "cv_vx.h"
-#include <VX/vx.h>
-#include <VX/vxu.h>
-#include <VX/vx_api.h>
-#include <VX/vx_khr_cnn.h>
-#include <VX/vx_lib_extras.h>
-#include <HAL/gc_hal.h>
-
+#include "parameter.h" 
 using namespace std;
 using namespace cv;
 
@@ -601,33 +593,25 @@ Point2d phaseCorrelateRes(InputArray _src1, InputArray _src2, InputArray _window
 
 Mat test_LogPolarFFTTemplateMatch(Mat im0, Mat im1, double canny_threshold1, double canny_threshold2, int idx)
 {
-    if(VIP7K)
-        threshold(im1, im1, 100, 200, CV_THRESH_BINARY);
-    else
-        Canny(im1, im1, canny_threshold2, canny_threshold1, 3, 1);
-    if(im0.type()!=CV_32FC1)
-    im0.convertTo(im0, CV_32FC1, 1.0 / 255.0);
-    if(im1.type()!=CV_32FC1)
-    im1.convertTo(im1, CV_32FC1, 1.0 / 255.0);
-
-    Mat im1_ROI = im1(Rect(2,26,256,128));
-	Mat im0_ROI = im0(Rect(2,26,256,128));
-
-    Point2d tr = phaseCorrelateRes(im1_ROI, im0_ROI);
-
     clock_t mat_st = clock();
- 
+
+    Mat im1_ROI = im1(Rect(2,0,256,128));
+    Mat im0_ROI = im0(Rect(2,0,256,128));
+    clock_t mat_en = clock();
+
+    Point2d tr = phaseCorrelateRes(im0_ROI, im1_ROI);
+
+   
 	Mat mov_mat = Mat::zeros(Size(3, 2), CV_64FC1);
 
 	mov_mat.at<double>(0, 0) = 1.0;
 	mov_mat.at<double>(0, 1) = 0.0;
 	mov_mat.at<double>(1, 0) = 0.0;
 	mov_mat.at<double>(1, 1) = 1.0;
-
-	mov_mat.at<double>(0, 2) = -tr.x;
+	mov_mat.at<double>(0, 2) = 0;
 	mov_mat.at<double>(1, 2) = tr.y;
 
-    clock_t mat_en = clock();
+    
     if(DEBUG_MSG)
     cout<< "##### End Phase time = " << static_cast<double>(mat_en - mat_st) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl;
 
