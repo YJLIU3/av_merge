@@ -367,7 +367,7 @@ Mat Panorama::rear_process(Mat front, Mat rear)
         }
         matrix_back = matrix;
 
-        test.at<double>(1, 2) = test.at<double>(1, 2) - 2.5;
+        test.at<double>(1, 2) = test.at<double>(1, 2) - 0.5;
 
         clock_t warp_st4 = clock();
         if(DEBUG_MSG)

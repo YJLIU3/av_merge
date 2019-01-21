@@ -308,19 +308,18 @@ Mat cl_exc_remap(Mat input, Mat map_x, Mat map_y)
     static Mat output = Mat::zeros(input_size, CV_8UC4);
     static Mat ROI = Mat::zeros(Size(260, 180), CV_8UC4);
 
-    cl_event ndrEvt;
     for(int i = 0; i < Cmd_Que_Num; i++)
     {
         if(input.data == remap_ptr_table_f[i])
         {
             int status = clEnqueueNDRangeKernel(clmemobj.CmdQue[i], clmemobj.imgKernel[i], 2, NULL,
-                    clpltobj.globaworksize, NULL, 0, NULL, &ndrEvt);
+                    clpltobj.globaworksize, NULL, 0, NULL, NULL);
             clFinish(clmemobj.CmdQue[i]);
         }
         if(input.data == remap_ptr_table_r[i])
         {
             int status = clEnqueueNDRangeKernel(clmemobj_r.CmdQue[i], clmemobj_r.imgKernel[i], 2, NULL,
-                    clpltobj.globaworksize, NULL, 0, NULL, &ndrEvt);
+                    clpltobj.globaworksize, NULL, 0, NULL, NULL);
             clFinish(clmemobj_r.CmdQue[i]);
         }
     }    
@@ -541,13 +540,12 @@ Mat cl_exc_affine(Mat input,  Mat matrix, bool Reversing)
 
     memcpy(affineobj.affine_matrix_Ptr, mat, sizeof(float)*6);
 
-    cl_event ndrEvt;
     
     int status = clEnqueueNDRangeKernel(affineobj.CmdQue[0], affineobj.imgKernel[0], 2, NULL,
-            globaworksize, NULL, 0, NULL, &ndrEvt);
+            globaworksize, NULL, 0, NULL, NULL);
 
     status = clEnqueueNDRangeKernel(affineobj.CmdQue[1], affineobj.imgKernel[1], 2, NULL,
-            globaworksize, NULL, 0, NULL, &ndrEvt);
+            globaworksize, NULL, 0, NULL, NULL);
     static size_t   globaworksize_1[2];
     globaworksize_1[0] = 260;
     globaworksize_1[1] = 180;
@@ -555,11 +553,11 @@ Mat cl_exc_affine(Mat input,  Mat matrix, bool Reversing)
     if(!Reversing)
     {
         status = clEnqueueNDRangeKernel(affineobj.CmdQue[2], affineobj.imgKernel[2], 2, NULL,
-            globaworksize_1, NULL, 0, NULL, &ndrEvt);
+            globaworksize_1, NULL, 0, NULL, NULL);
     }else
     {
         status = clEnqueueNDRangeKernel(affineobj.CmdQue[3], affineobj.imgKernel[3], 2, NULL,
-            globaworksize_1, NULL, 0, NULL, &ndrEvt);        
+            globaworksize_1, NULL, 0, NULL, NULL);        
     }
 //    clFinish(affineobj.CmdQue[3]);
     
@@ -571,7 +569,7 @@ Mat cl_exc_affine(Mat input,  Mat matrix, bool Reversing)
     static int cnt = 0;
 
     status = clEnqueueNDRangeKernel(outbufobj.CmdQue[cnt], outbufobj.imgKernel[cnt], 2, NULL,
-        globaworksize_2, NULL, 0, NULL, &ndrEvt);
+        globaworksize_2, NULL, 0, NULL, NULL);
     
     output.data = (uchar *)outbufobj.Ptr_out[cnt];
     
