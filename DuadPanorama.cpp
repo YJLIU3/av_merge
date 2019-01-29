@@ -183,7 +183,7 @@ void get_Univariate_matrix(void)
 static bool _init_vx_remap_F = true;
 static bool _init_vx_remap_R = true;
 
-Mat av_merge(Mat front_image, Mat rear_image, bool Reversing)
+Mat av_merge(Mat front_image, Mat rear_image, float angle,  float speed, bool Reversing)
 {
 	Mat out;
 
@@ -204,9 +204,9 @@ Mat av_merge(Mat front_image, Mat rear_image, bool Reversing)
     	}
 //        imwrite("debug/front_trs.jpg", front_trs);
         clock_t end_process = clock();
-        if(!DEBUG_MSG)
+        if(DEBUG_MSG)
             cout<< "###### front process Running time  is: " << static_cast<double>(end_process - end_remap) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl;
-        out = pa.front_process(front_trs, rear_trs);
+        out = pa.front_process(front_trs, rear_trs, angle, speed);
 
     }
     else
@@ -229,15 +229,15 @@ Mat av_merge(Mat front_image, Mat rear_image, bool Reversing)
         clock_t end_process = clock();
         if(DEBUG_MSG)
             cout<< "##### Remap time  = " << static_cast<double>(end_process - end_remap) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl;        
-        out = pa.rear_process(front_trs, rear_trs);
+        out = pa.rear_process(front_trs, rear_trs, angle, speed);
 
         
     }	
 	return out;
 }
 
-extern "C" char * av_merge_image(char * front_buf, char * rear_buf, bool Reversing);
-char* av_merge_image(char * front_buf, char * rear_buf, bool Reversing)
+extern "C" char * av_merge_image(char * front_buf, char * rear_buf, float angle,  float speed, bool Reversing);
+char* av_merge_image(char * front_buf, char * rear_buf, float angle,  float speed, bool Reversing)
 {
 	if (init_ == true) 
 	{
@@ -304,7 +304,7 @@ char* av_merge_image(char * front_buf, char * rear_buf, bool Reversing)
             exit( -1 );
         }
         input1.read( ( char * )Map_Ry.data , sizeof( float ) * 260 * 180);
-
+#if 0
         Mat front_chess = imread("F.bmp");
 		Mat rear_chess = imread("B.bmp");
 		remap(front_chess, front_chess, Map_Fx, Map_Fy, INTER_LINEAR, BORDER_CONSTANT);
@@ -315,6 +315,7 @@ char* av_merge_image(char * front_buf, char * rear_buf, bool Reversing)
             imwrite("debug/F_chess.jpg", front_chess);
 		    imwrite("debug/B_chess.jpg", rear_chess);
         }
+#endif
 		front_mask1 = Mat::ones(image_size, CV_8UC1);
 
 		rear_mask1 = Mat::ones(image_size, CV_8UC1);
@@ -336,7 +337,7 @@ char* av_merge_image(char * front_buf, char * rear_buf, bool Reversing)
 
         cout<< "###############################bef Running time  is: " << static_cast<double>(en_b - st_b) / CLOCKS_PER_SEC * 1000 << "ms#####################" << endl;
     
-        out =  av_merge(front_image, rear_image, Reversing);
+        out =  av_merge(front_image, rear_image, angle,  speed, Reversing);
     }
     else
     {
@@ -348,7 +349,7 @@ char* av_merge_image(char * front_buf, char * rear_buf, bool Reversing)
         clock_t en_c = clock();
         if(DEBUG_MSG)
             cout<< "##### bef Running time  is: " << static_cast<double>(en_c - st_b) / CLOCKS_PER_SEC * 1000 << "ms #####" << endl;
-        out =  av_merge(front_image, rear_image, Reversing); 
+        out =  av_merge(front_image, rear_image, angle,  speed, Reversing); 
     }
 
     clock_t st_up = clock();

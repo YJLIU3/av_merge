@@ -6,7 +6,7 @@
 #include<time.h> 
 #include "fftm.hpp" 
 #include "cl_api.h"
-
+#define CAN false
 
 
 static Mat matrix_bypast[25];
@@ -136,7 +136,7 @@ void Panorama::expand(Mat input, Mat& output)
 
 
 
-Mat Panorama::front_process(Mat front, Mat rear)
+Mat Panorama::front_process(Mat front, Mat rear, float angle,  float speed)
 {
     static Mat front_before;
     static Mat front_now = Mat::zeros(image_size, CV_32FC1);
@@ -185,10 +185,26 @@ Mat Panorama::front_process(Mat front, Mat rear)
         clock_t warp_st1 = clock();
         Mat matrix;
 
-        if(!VIP7K);
+        if(CAN)
+        {
+            matrix = getRotationMatrix2D(Point(front.cols / 2, front.rows / 2), angle, 1.0);
+            speed = (speed/9) * 10.0;
+
+
+        }
 //          matrix = vx_LogPolarFFTTemplateMatch(front_before, front_now, 200, 100, idx);
         else
- 		    matrix = test_LogPolarFFTTemplateMatch(front_before, front_now, 200, 100, idx);
+        {
+            matrix = test_LogPolarFFTTemplateMatch(front_before, front_now, 200, 100, idx);
+//            matrix = LogPolarFFTTemplateMatch(front_before, front_now, 200, 100, idx);
+        }
+
+        double cos_theta = matrix.at<double>(0, 0);
+        double sin_theta = matrix.at<double>(1, 0);
+        
+        matrix.at<double>(0, 2) = 35 - 35 * cos_theta + 980 * sin_theta + speed * sin_theta;
+        matrix.at<double>(1, 2) += 980 - 35 * sin_theta - 980 * cos_theta + speed * cos_theta;
+ 		    
         clock_t warp_st2 = clock();
         if(DEBUG_MSG)
         cout<< "Compute_matrix Running time  is: " << static_cast<double>(warp_st2 - warp_st1) / CLOCKS_PER_SEC * 1000 << "ms" << endl;   
@@ -259,7 +275,7 @@ Mat Panorama::front_process(Mat front, Mat rear)
 	return output;
 }
 
-Mat Panorama::rear_process(Mat front, Mat rear)
+Mat Panorama::rear_process(Mat front, Mat rear, float angle,  float speed)
 {
     static Mat rear_before;
     static Mat rear_now = Mat::zeros(image_size, CV_32FC1);
@@ -311,10 +327,30 @@ Mat Panorama::rear_process(Mat front, Mat rear)
         Mat matrix;
 
         
-        if(!VIP7K);
-//          matrix = vx_LogPolarFFTTemplateMatch(rear_before, rear_now,  200, 100, idx);
+        if(CAN)
+        {
+            matrix = getRotationMatrix2D(Point(front.cols / 2, front.rows / 2), angle, 1.0);
+            speed = (speed/9) * 10.0;
+        	double cos_theta = matrix.at<double>(0, 0);
+		    double sin_theta = matrix.at<double>(1, 0);
+
+ 		    matrix.at<double>(0, 2) = 30 - 30 * cos_theta + 460 * sin_theta + speed * sin_theta;
+ 		    matrix.at<double>(1, 2) += 460 - 30 * sin_theta - 460 * cos_theta + speed * cos_theta;
+
+        }
+        
         else
- 		    matrix = test_LogPolarFFTTemplateMatch(rear_before, rear_now, 200, 100, idx);
+        {
+            matrix = test_LogPolarFFTTemplateMatch(rear_before, rear_now, 200, 100, idx);
+//            matrix = LogPolarFFTTemplateMatch(rear_before, rear_now, 200, 100, idx);
+
+            double cos_theta = matrix.at<double>(0, 0);
+		    double sin_theta = matrix.at<double>(1, 0);
+
+            matrix.at<double>(0, 2) += 30 - 30 * cos_theta + 460 * sin_theta;
+            matrix.at<double>(1, 2) += 460 - 30 * sin_theta - 460 * cos_theta;
+        }
+ 		    
 
         Mat temp_mat;
         
